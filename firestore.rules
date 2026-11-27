@@ -1,0 +1,44 @@
+rules_version = '2';
+// EMT Skills Testing Tracker — Firestore security rules.
+// Owner (Google sign-in): full access.
+// Instructors (anonymous sign-in + station code): read only their own station card, and submit/resubmit
+// a skill sheet for the student on it. They can't read the roster, results, other stations or anyone else's sheets.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email == OWNER_EMAIL
+        && request.auth.token.email_verified == true;
+    }
+
+    // Owner can do everything.
+    match /{document=**} {
+      allow read, write: if isOwner();
+    }
+
+    // Station card: readable by exact code only (no listing), by any signed-in device.
+    match /stationCodes/{code} {
+      allow get: if request.auth != null;
+    }
+
+    // Skill sheets submitted by instructors.
+    match /submissions/{id} {
+      function validSheet(d) {
+        return d.uid == request.auth.uid
+          && d.status == 'pending'
+          && d.code is string
+          && exists(/databases/$(database)/documents/stationCodes/$(d.code))
+          && get(/databases/$(database)/documents/stationCodes/$(d.code)).data.iid == d.iid
+          && d.result in ['P', 'F'];
+      }
+      allow create: if request.auth != null && validSheet(request.resource.data);
+      allow get: if request.auth != null && resource.data.uid == request.auth.uid;
+      // Resubmit after the owner sends it back.
+      allow update: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        && resource.data.status == 'returned'
+        && validSheet(request.resource.data);
+    }
+  }
+}

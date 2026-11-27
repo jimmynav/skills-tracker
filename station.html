@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Skills Station</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="sheets.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+/* Instructor station: one column, phone-first. Header (station, skill, timer) stays pinned; the sheet scrolls under it. */
+:root{
+  --ink:#16202c; --muted:#5b6878; --line:#d7dee7; --paper:#f4f6f9; --card:#ffffff;
+  --accent:#1d5fbf; --accent-soft:#e3edfb; --pass:#1e7a46; --pass-soft:#e2f3e8; --fail:#b42318; --fail-soft:#fbe6e4; --warn:#a15c00; --warn-soft:#fdf0d9;
+  --display:"Archivo","Helvetica Neue",Arial,sans-serif; --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){ :root{ --ink:#e6ebf1; --muted:#97a3b3; --line:#2c3746; --paper:#10161e; --card:#18212c; --accent:#6ea2f0; --accent-soft:#1c2c45; --pass:#5cc58a; --pass-soft:#163324; --fail:#f07a6e; --fail-soft:#3a1c1a; --warn:#e8a94a; --warn-soft:#38291a; color-scheme: dark; } }
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--paper);color:var(--ink);font:16px/1.45 var(--body);padding-bottom:env(safe-area-inset-bottom)}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);margin:0}
+.wrap{max-width:760px;margin:0 auto;padding:12px 14px 120px;display:grid;gap:12px}
+.top{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px calc(10px);padding-top:max(10px, env(safe-area-inset-top))}
+.top .in{max-width:760px;margin:0 auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.stn{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:32px;padding:0 8px;border-radius:7px;background:var(--ink);color:var(--paper);font-family:var(--display);font-weight:800;font-size:17px}
+.top .who{font-weight:700}
+.top .sk{color:var(--muted);font-size:14px}
+.timer{margin-left:auto;font-family:var(--mono);font-weight:600;font-size:20px;padding:3px 10px;border-radius:8px;background:var(--accent-soft);color:var(--accent)}
+.timer.near{background:var(--warn-soft);color:var(--warn)} .timer.over{background:var(--fail);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px}
+.big{font-family:var(--display);font-size:24px;font-weight:800}
+.muted{color:var(--muted);font-size:14px}
+.chip{display:inline-block;font-size:13px;padding:2px 9px;border-radius:999px;border:1px solid var(--line)}
+.chip.re{background:var(--warn-soft);border-color:var(--warn);color:var(--warn);font-weight:600}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:12px 16px;font-weight:600;min-height:48px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{opacity:.5}
+input.txt,textarea.txt{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+textarea.txt{min-height:90px;resize:vertical}
+.code-in{font-family:var(--mono);font-size:28px;letter-spacing:.2em;text-transform:uppercase;text-align:center}
+.sec{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:6px}
+.note{font-style:italic;font-size:14px;color:var(--accent);background:var(--accent-soft);border-radius:8px;padding:8px 10px}
+.item{display:flex;gap:12px;align-items:center;border:1.5px solid var(--line);border-radius:10px;padding:12px;background:var(--card);text-align:left;width:100%;min-height:52px}
+.item .box{flex:none;width:28px;height:28px;border-radius:7px;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}
+.item.on{border-color:var(--pass);background:var(--pass-soft)}
+.item.on .box{background:var(--pass);border-color:var(--pass)}
+.item .pt{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--muted);white-space:nowrap}
+.group{border:1.5px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px;background:var(--card)}
+.group .gt{display:flex;gap:8px;align-items:baseline;font-weight:600}
+.group .gt .pt{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--muted)}
+.subs{display:flex;flex-wrap:wrap;gap:8px}
+.sub{border:1.5px solid var(--line);border-radius:999px;padding:9px 14px;background:var(--paper);min-height:44px;text-align:left}
+.sub.on{border-color:var(--pass);background:var(--pass);color:#fff;font-weight:600}
+.crit{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);text-align:left;width:100%}
+.crit .box{flex:none;width:26px;height:26px;border-radius:6px;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}
+.crit.on{border-color:var(--fail);background:var(--fail-soft)} .crit.on .box{background:var(--fail);border-color:var(--fail)}
+.result{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rbtn{border:2px solid var(--line);border-radius:12px;padding:16px;font-family:var(--display);font-size:22px;font-weight:800;background:var(--card)}
+.rbtn.p.on{background:var(--pass);border-color:var(--pass);color:#fff} .rbtn.f.on{background:var(--fail);border-color:var(--fail);color:#fff}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));z-index:6}
+.bar .in{max-width:760px;margin:0 auto;display:flex;gap:12px;align-items:center}
+.score{font-family:var(--display);font-size:22px;font-weight:800}
+.warn{border:1px solid var(--warn);background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:10px 12px;font-weight:600}
+.bad{border:1px solid var(--fail);background:var(--fail-soft);color:var(--fail);border-radius:10px;padding:10px 12px;font-weight:600}
+.ok{border:1px solid var(--pass);background:var(--pass-soft);color:var(--pass);border-radius:10px;padding:10px 12px;font-weight:600}
+.center{text-align:center}
+.modal-bg{position:fixed;inset:0;background:rgba(10,16,24,.5);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.modal-bg[hidden]{display:none}
+.modal{background:var(--card);border-radius:16px 16px 0 0;max-width:760px;width:100%;padding:18px;display:grid;gap:12px;padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+[hidden]{display:none !important}
+@media (prefers-reduced-motion: no-preference){ .item,.sub,.crit{transition:background .12s,border-color .12s} }
+</style>
+</head>
+<body>
+<div class="top" id="top" hidden><div class="in">
+  <span class="stn" id="tStn">–</span>
+  <div><div class="who" id="tWho"></div><div class="sk" id="tSkill"></div></div>
+  <span class="timer" id="tTimer" hidden>0:00</span>
+</div></div>
+<main class="wrap" id="app"><div class="card center"><div class="muted">Loading…</div></div></main>
+<div class="bar" id="bar" hidden><div class="in">
+  <div><div class="muted" style="font-size:12px">Points</div><div class="score" id="bScore">0 / 0</div></div>
+  <button class="btn primary" id="bSubmit" style="margin-left:auto;min-width:150px">Submit sheet</button>
+</div></div>
+<div class="modal-bg" id="mBg" hidden><div class="modal" id="m"></div></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function store(k, v){ try{ if(v===undefined) return JSON.parse(localStorage.getItem(k)||"null"); if(v===null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); }catch(e){ return null; } }
+function durText(ms){ const t=Math.max(0,Math.floor(ms/1000)), h=Math.floor(t/3600), m=Math.floor(t%3600/60), s=t%60; return (h? h+":"+String(m).padStart(2,"0") : m)+":"+String(s).padStart(2,"0"); }
+
+let db = null, uid = null;
+let code = null, stationDoc = null, unsubStation = null, unsubSub = null;
+let form = null;        // working sheet for the current send
+let sub = null;         // my submission for the current send, as stored
+
+/* ---------- boot ---------- */
+async function boot(){
+  if(window.__testDb){ db = window.__testDb; uid = "test-instructor"; return start(); }
+  if(!window.firebase || !window.FIREBASE_CONFIG || !FIREBASE_CONFIG.apiKey){ showMsg("This station page isn't connected yet. Ask the lead instructor."); return; }
+  firebase.initializeApp(FIREBASE_CONFIG);
+  try{
+    const cred = await firebase.auth().signInAnonymously();
+    uid = cred.user.uid; db = firebase.firestore(); start();
+  }catch(e){ showMsg("Couldn't connect. Check the Wi-Fi and reload the page."); }
+}
+function start(){
+  const fromHash = (location.hash||"").replace("#","").trim().toUpperCase();
+  if(fromHash){ store("station-code", fromHash); history.replaceState(null, "", location.pathname); }
+  code = fromHash || store("station-code");
+  if(code) listen(code); else askCode();
+}
+function showMsg(t){ $("app").innerHTML = `<div class="card center"><div>${esc(t)}</div></div>`; }
+function askCode(msg){
+  $("top").hidden = true; $("bar").hidden = true;
+  $("app").innerHTML = `<div class="card">
+    <h1>Skills station</h1>
+    <p class="muted" style="margin:0">Enter the station code from the lead instructor.</p>
+    ${msg? `<div class="bad">${esc(msg)}</div>`:""}
+    <input class="txt code-in" id="codeIn" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE" aria-label="Station code">
+    <button class="btn primary" id="codeGo">Open my station</button></div>`;
+  const go = ()=>{ const c = $("codeIn").value.trim().toUpperCase().replace(/[^A-Z0-9]/g,""); if(c.length<4) return; store("station-code", c); code = c; listen(c); };
+  $("codeGo").onclick = go; $("codeIn").addEventListener("keydown", e=>{ if(e.key==="Enter") go(); }); $("codeIn").focus();
+}
+function listen(c){
+  if(unsubStation) unsubStation();
+  showMsg("Opening your station…");
+  unsubStation = db.doc("stationCodes/"+c).onSnapshot(snap=>{
+    if(!snap.exists){ store("station-code", null); askCode("That code isn't active. Check it with the lead instructor."); return; }
+    const prev = stationDoc; stationDoc = snap.data();
+    const prevSend = prev && prev.student ? prev.student.sendId : null, nowSend = stationDoc.student ? stationDoc.student.sendId : null;
+    if(prevSend !== nowSend) loadFormFor(stationDoc);
+    render();
+  }, err=>{ store("station-code", null); askCode("That code isn't active. Check it with the lead instructor."); });
+}
+
+/* ---------- the working sheet for the current student ---------- */
+function draftKey(){ return stationDoc && stationDoc.student ? "draft:"+code+":"+stationDoc.student.sendId : null; }
+function loadFormFor(d){
+  if(unsubSub){ unsubSub(); unsubSub = null; }
+  sub = null;
+  if(!d.student){ form = null; return; }
+  form = store(draftKey()) || {marks:{}, critical:[], criticalNotes:"", notes:"", scenario:"", result:null};
+  const subId = store("sub:"+d.student.sendId);
+  if(subId){
+    unsubSub = db.collection("submissions").doc(subId).onSnapshot(s=>{
+      sub = s.exists ? Object.assign({id:s.id}, s.data()) : null;
+      if(sub && sub.status==="returned" && form._submitted){ form._submitted = false; saveDraft(); }
+      render();
+    }, ()=>{});
+  }
+}
+function saveDraft(){ const k = draftKey(); if(k) store(k, form); }
+function sheet(){ return stationDoc && stationDoc.skillId ? SKILL_SHEETS[stationDoc.skillId] : null; }
+
+/* ---------- rendering ---------- */
+function render(){
+  const d = stationDoc; if(!d) return;
+  $("top").hidden = false;
+  $("tStn").textContent = d.stationNo || "–";
+  $("tWho").textContent = d.instructorName + " · " + d.lab;
+  const sh = sheet();
+  $("tSkill").textContent = sh ? `${sh.code} · ${sh.title}` : (d.skillName || "No skill assigned yet");
+  const stu = d.student;
+  $("tTimer").hidden = !stu;
+  if(d.onBreak && !stu){ $("bar").hidden = true; $("app").innerHTML = `<div class="card center"><div class="big">You're marked “not here”</div><div class="muted">The lead instructor will send students when you're back.</div></div>${switchLink()}`; return; }
+  if(!stu){
+    $("bar").hidden = true;
+    $("app").innerHTML = `<div class="card center"><div class="big">Waiting for your next student</div>
+      <div class="muted">${sh? "You're testing <b>"+esc(sh.title)+"</b>. ":""}This screen updates by itself when a student is sent to you.</div></div>${switchLink()}`;
+    return;
+  }
+  if(!sh){ $("bar").hidden = true; $("app").innerHTML = `<div class="card"><div class="big">${esc(stu.name)}</div><div class="warn">There's no digital sheet for “${esc(d.skillName||"this skill")}”. Grade on paper and tell the lead instructor the result.</div></div>`; return; }
+
+  const submittedPending = sub && sub.status==="pending";
+  const returned = sub && sub.status==="returned";
+  const locked = submittedPending;
+  const head = `<div class="card">
+      <div class="muted">Candidate</div>
+      <div class="big">${esc(stu.name)}</div>
+      <div class="row" style="display:flex;gap:6px;flex-wrap:wrap">${stu.attemptNo>1?`<span class="chip re">Retest · attempt ${stu.attemptNo} of 3</span>`:`<span class="chip">1st attempt</span>`}${stu.assistantName?`<span class="chip">Assistant: ${esc(stu.assistantName)}</span>`:""}${sh.timeLimitMin?`<span class="chip">Time limit ${sh.timeLimitMin} min</span>`:""}</div>
+      ${sh.scenario? `<label class="muted" for="scen">Scenario #</label><input class="txt" id="scen" value="${esc(form.scenario)}" ${locked?"disabled":""} inputmode="numeric" style="max-width:160px">`:""}
+    </div>`;
+  const status = submittedPending ? `<div class="ok">Submitted. Waiting for the lead instructor to approve. You can't change it unless they send it back.</div>`
+    : returned ? `<div class="bad">Sent back by the lead instructor: “${esc(sub.returnNote||"")}”. Make your changes and submit again.</div>` : "";
+  const rows = sh.rows.map((r,i)=>{
+    if(r.h) return `<div class="sec">${esc(r.h)}</div>`;
+    if(r.note) return `<div class="note">${esc(r.note)}</div>`;
+    if(r.p){ const on = !!form.marks["r"+i]; return `<button class="item ${on?"on":""}" data-k="r${i}" ${locked?"disabled":""}><span class="box">${on?"✓":""}</span><span>${esc(r.t)}</span><span class="pt">${on?r.p:0}/${r.p}</span></button>`; }
+    const got = SheetKit.rowScore(r,i,form.marks), max = SheetKit.rowMax(r);
+    const opts = r.subs ? r.subs.map((t,j)=>({k:"r"+i+"."+j, t})) : r.opts.map(o=>({k:"r"+i+"."+o, t:o}));
+    return `<div class="group"><div class="gt"><span>${esc(r.t)}${r.choose?` <span class="muted">(up to ${r.choose})</span>`:""}</span><span class="pt">${got}/${max}</span></div>
+      <div class="subs">${opts.map(o=>`<button class="sub ${form.marks[o.k]?"on":""}" data-k="${esc(o.k)}" ${locked?"disabled":""}>${esc(o.t)}</button>`).join("")}</div></div>`;
+  }).join("");
+  const crit = sh.critical.map((c,i)=>{ const on = form.critical.includes(i); return `<button class="crit ${on?"on":""}" data-c="${i}" ${locked?"disabled":""}><span class="box">${on?"✕":""}</span><span>${esc(c)}</span></button>`; }).join("");
+  const critOn = form.critical.length>0;
+  $("app").innerHTML = head + status + `<div class="card" style="gap:8px">${rows}</div>
+    <div class="card" style="gap:8px"><h3>Critical criteria</h3>${crit}
+      ${critOn? `<label class="muted" for="critNotes"><b style="color:var(--fail)">Required:</b> document your rationale for each checked item</label><textarea class="txt" id="critNotes" ${locked?"disabled":""}>${esc(form.criticalNotes)}</textarea>`:""}</div>
+    <div class="card"><h3>Notes</h3><textarea class="txt" id="notes" placeholder="Anything you want on the record" ${locked?"disabled":""}>${esc(form.notes)}</textarea></div>
+    <div class="card"><h3>Your decision</h3>
+      <div class="result"><button class="rbtn p ${form.result==="P"?"on":""}" data-r="P" ${locked?"disabled":""}>PASS</button><button class="rbtn f ${form.result==="F"?"on":""}" data-r="F" ${locked?"disabled":""}>FAIL</button></div>
+      ${critOn && form.result==="P" ? `<div class="warn">A critical criterion is checked. NREMT standard is a fail when any critical criterion is checked.</div>`:""}
+    </div>`;
+  $("bar").hidden = false;
+  $("bScore").textContent = SheetKit.sheetScore(sh, form.marks) + " / " + SheetKit.sheetTotal(sh);
+  $("bSubmit").disabled = locked;
+  $("bSubmit").textContent = locked ? "Submitted" : returned ? "Resubmit sheet" : "Submit sheet";
+  tick();
+}
+function switchLink(){ return `<p class="center"><button class="btn" id="switchCode" style="min-height:40px;padding:8px 14px">Use a different code</button></p>`; }
+
+/* ---------- input ---------- */
+document.addEventListener("click", e=>{
+  const t = e.target.closest("button"); if(!t || t.disabled) return;
+  if(t.id==="switchCode"){ store("station-code", null); if(unsubStation) unsubStation(); stationDoc = null; askCode(); return; }
+  if(!form) return;
+  const sh = sheet();
+  if(t.dataset.k){
+    const k = t.dataset.k;
+    const ri = Number(k.slice(1).split(".")[0]), r = sh.rows[ri];
+    if(form.marks[k]) delete form.marks[k];
+    else {
+      if(r && r.choose){ const n = r.opts.filter(o=>form.marks["r"+ri+"."+o]).length; if(n>=r.choose){ flash(`Up to ${r.choose} body systems count for points.`); return; } }
+      form.marks[k] = true;
+    }
+    saveDraft(); render(); return;
+  }
+  if(t.dataset.c!=null){ const i = Number(t.dataset.c); form.critical = form.critical.includes(i) ? form.critical.filter(x=>x!==i) : form.critical.concat([i]).sort((a,b)=>a-b); saveDraft(); render(); return; }
+  if(t.dataset.r){ form.result = form.result===t.dataset.r ? null : t.dataset.r; saveDraft(); render(); return; }
+});
+document.addEventListener("input", e=>{
+  if(!form) return;
+  if(e.target.id==="notes") form.notes = e.target.value;
+  if(e.target.id==="critNotes") form.criticalNotes = e.target.value;
+  if(e.target.id==="scen") form.scenario = e.target.value;
+  saveDraft();
+});
+$("bSubmit").onclick = ()=>{
+  const sh = sheet(); if(!form || !sh) return;
+  if(!form.result){ flash("Choose PASS or FAIL first."); return; }
+  if(form.critical.length && !form.criticalNotes.trim()){ flash("Document your rationale for the checked critical criteria."); const c=$("critNotes"); if(c) c.focus(); return; }
+  const pts = SheetKit.sheetScore(sh, form.marks), tot = SheetKit.sheetTotal(sh);
+  openSheet(`<h2>Submit this sheet?</h2>
+    <div><b>${esc(stationDoc.student.name)}</b> · ${esc(sh.title)}</div>
+    <div class="big">${form.result==="P"?"PASS":"FAIL"} · ${pts}/${tot}</div>
+    ${form.critical.length? `<div class="bad">${form.critical.length} critical criteri${form.critical.length>1?"a":"on"} checked</div>`:""}
+    <div class="muted">It goes to the lead instructor for approval.</div>
+    <div style="display:flex;gap:10px"><button class="btn" id="mCancel" style="flex:1">Keep editing</button><button class="btn primary" id="mGo" style="flex:1">Submit</button></div>`);
+  $("mCancel").onclick = closeSheet;
+  $("mGo").onclick = submit;
+};
+async function submit(){
+  const sh = sheet(), d = stationDoc, stu = d.student;
+  $("mGo").disabled = true;
+  const body = {code, uid, cls: d.cls, iid: d.iid, examiner: d.instructorName, studentId: stu.id, studentName: stu.name, skillId: d.skillId,
+    sendId: stu.sendId, attemptNo: stu.attemptNo, assistantName: stu.assistantName || null,
+    marks: form.marks, critical: form.critical, criticalNotes: form.criticalNotes || "", notes: form.notes || "", scenario: form.scenario || "",
+    points: SheetKit.sheetScore(sh, form.marks), result: form.result, startedAt: stu.startedAt || null, endedAt: new Date().toISOString(),
+    submittedAt: new Date().toISOString(), status: "pending"};
+  try{
+    if(sub && sub.status==="returned"){ await db.collection("submissions").doc(sub.id).set(Object.assign({}, body, {returnNote: sub.returnNote||"", resubmitted: true})); }
+    else { const ref = db.collection("submissions").doc(); await ref.set(body); store("sub:"+stu.sendId, ref.id); loadFormFor(d); }
+    form._submitted = true; saveDraft();
+    closeSheet(); render();
+  }catch(e){ closeSheet(); flash("Couldn't submit. Check the Wi-Fi and try again. Your sheet is saved on this device."); }
+}
+
+/* ---------- small UI helpers ---------- */
+function openSheet(html){ $("m").innerHTML = html; $("mBg").hidden = false; }
+function closeSheet(){ $("mBg").hidden = true; }
+$("mBg").addEventListener("click", e=>{ if(e.target===$("mBg")) closeSheet(); });
+let flashT = null;
+function flash(t){ openSheet(`<div class="warn">${esc(t)}</div><button class="btn" onclick="document.getElementById('mBg').hidden=true">OK</button>`); }
+function tick(){
+  const d = stationDoc; const el = $("tTimer");
+  if(!d || !d.student || !d.student.startedAt){ el.hidden = true; return; }
+  const ms = Date.now() - Date.parse(d.student.startedAt), sh = sheet();
+  el.textContent = durText(ms);
+  el.classList.toggle("near", !!(sh && sh.timeLimitMin && ms >= (sh.timeLimitMin-2)*60000 && ms < sh.timeLimitMin*60000));
+  el.classList.toggle("over", !!(sh && sh.timeLimitMin && ms >= sh.timeLimitMin*60000));
+}
+setInterval(tick, 1000);
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,2337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMT Skills Testing Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="firebase-config.js"></script>
+<script src="sheets.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: header with tabs; Testing view is a split screen — testing floor (stations) left, student packets right. */
+:root{
+  --ink:#16202c; --muted:#5b6878; --line:#d7dee7; --paper:#f4f6f9; --card:#ffffff;
+  --accent:#1d5fbf; --accent-soft:#e3edfb;
+  --pass:#1e7a46; --pass-soft:#e2f3e8;
+  --fail:#b42318; --fail-soft:#fbe6e4;
+  --warn:#a15c00; --warn-soft:#fdf0d9;
+  --display:"Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#e6ebf1; --muted:#97a3b3; --line:#2c3746; --paper:#10161e; --card:#18212c;
+    --accent:#6ea2f0; --accent-soft:#1c2c45;
+    --pass:#5cc58a; --pass-soft:#163324; --fail:#f07a6e; --fail-soft:#3a1c1a; --warn:#e8a94a; --warn-soft:#38291a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e6ebf1; --muted:#97a3b3; --line:#2c3746; --paper:#10161e; --card:#18212c;
+  --accent:#6ea2f0; --accent-soft:#1c2c45;
+  --pass:#5cc58a; --pass-soft:#163324; --fail:#f07a6e; --fail-soft:#3a1c1a; --warn:#e8a94a; --warn-soft:#38291a;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.45 var(--body);display:flex;flex-direction:column}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+header.top{display:flex;align-items:center;gap:16px;padding:10px 18px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header.top h1{font-size:18px;font-weight:800;letter-spacing:.01em}
+header.top .sem{color:var(--muted);font-size:14px}
+.classes{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.classes button{border:0;border-right:1px solid var(--line);background:var(--paper);padding:6px 14px;font-weight:700;font-family:var(--display);color:var(--muted)}
+.classes button:last-child{border-right:0}
+.classes button[aria-selected="true"]{background:var(--ink);color:var(--paper)}
+nav.tabs{display:flex;gap:4px;margin-left:auto}
+nav.tabs button{border:1px solid transparent;background:none;padding:6px 14px;border-radius:6px;font-weight:600;color:var(--muted)}
+nav.tabs button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--accent-soft)}
+.acct{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.signin{position:fixed;inset:0;background:var(--paper);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px}
+.signin[hidden]{display:none}
+.signin-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px;max-width:420px;width:100%;display:grid;gap:12px;text-align:center}
+.signin-card h1{font-size:22px}
+.codes{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.codecard{display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--paper)}
+.codecard .qr{background:#fff;padding:4px;border-radius:6px;min-width:104px;min-height:104px}
+.subbadge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#fff;background:var(--accent);border:0;border-radius:999px;padding:2px 10px;justify-self:start;cursor:pointer}
+.subline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--accent);border-radius:7px;padding:4px 8px;font-size:12.5px}
+.subline .btn{padding:2px 10px;font-size:12px}
+.codechip{font-family:var(--mono);font-weight:700;letter-spacing:.08em}
+.sheetview{display:grid;gap:4px;max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.sheetview .r{display:flex;gap:8px;align-items:baseline;font-size:13px;border-bottom:1px dashed var(--line);padding:3px 0}
+.sheetview .r .pt{margin-left:auto;font-family:var(--mono);font-weight:600;white-space:nowrap}
+.sheetview .h{font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:6px}
+.sheetview .miss{color:var(--fail)}
+.sheetview .subs{font-size:12px;color:var(--muted)}
+.savestate{font-size:12px;color:var(--muted);min-width:70px;text-align:right}
+.savestate.bad{color:var(--fail);font-weight:600}
+
+.banner{padding:10px 18px;background:var(--fail-soft);color:var(--fail);font-weight:600;border-bottom:1px solid var(--line)}
+.banner[hidden]{display:none}
+.pausedbar{padding:7px 18px;background:var(--warn-soft);color:var(--warn);font-weight:600;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center}
+.pausedbar[hidden]{display:none}
+.btn.paused{background:var(--warn);border-color:var(--warn);color:#fff}
+
+main{flex:1;min-height:0}
+.view{height:100%}
+.view[hidden], #view-testing[hidden]{display:none}
+#view-testing{display:grid;grid-template-columns:minmax(360px,5fr) 7fr;min-height:0}
+.panel{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+.panel:last-child{border-right:0}
+.panel-head{padding:14px 18px 10px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--line);background:var(--card)}
+.panel-head h2{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.panel-body{flex:1;overflow:auto;padding:14px 18px 40px}
+@media (max-width:900px){
+  #view-testing{grid-template-columns:1fr;height:auto}
+  .panel{border-right:0;border-bottom:1px solid var(--line)}
+  .panel-body{overflow:visible}
+  main{overflow:auto}
+}
+
+/* demand chips */
+.demand{display:flex;flex-wrap:wrap;gap:6px}
+.dchip{border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12.5px;background:var(--paper);display:flex;gap:6px;align-items:baseline}
+.dchip b{font-family:var(--display);font-size:13px}
+.dchip.need{border-color:var(--warn);background:var(--warn-soft)}
+.dchip.done{opacity:.55}
+.dchip .k{color:var(--muted)}
+
+/* charts: validated categorical slots (blue, aqua, yellow) + status critical; selected per theme */
+:root{ --v1:#2a78d6; --v2:#1baf7a; --v3:#eda100; --vcrit:#d03b3b; --vneg:#e34948; --vgrid:#e4e8ee; --vpend:#d5dbe3; }
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --v1:#3987e5; --v2:#199e70; --v3:#c98500; --vcrit:#d03b3b; --vneg:#e66767; --vgrid:#26303c; --vpend:#3a4553; } }
+:root[data-theme="dark"]{ --v1:#3987e5; --v2:#199e70; --v3:#c98500; --vcrit:#d03b3b; --vneg:#e66767; --vgrid:#26303c; --vpend:#3a4553; }
+.viz-hero{display:grid;grid-template-columns:minmax(220px,1fr) repeat(3,minmax(140px,1fr));gap:14px}
+@media (max-width:820px){ .viz-hero{grid-template-columns:1fr 1fr} }
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:4px;align-content:center}
+.tile .big{font-family:var(--display);font-size:34px;font-weight:800;line-height:1}
+.tile .lab{font-size:12.5px;color:var(--muted)}
+.tile .sub{font-size:12px;color:var(--muted)}
+.ring-tile{display:flex;gap:14px;align-items:center}
+.viz-two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media (max-width:980px){ .viz-two{grid-template-columns:1fr} }
+.viz svg{display:block;width:100%;height:auto;overflow:visible}
+.viz text{font-family:var(--body);fill:var(--muted);font-size:12px}
+.viz .tx-strong{fill:var(--ink);font-weight:600}
+.viz [data-tip]{cursor:default}
+.viz [data-tip]:hover,.viz [data-tip]:focus{opacity:.85;outline:none}
+.vlegend{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--muted)}
+.vlegend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+#vtip{position:fixed;z-index:40;pointer-events:none;background:var(--ink);color:var(--paper);font-size:12.5px;padding:7px 10px;border-radius:7px;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:280px;line-height:1.4;white-space:pre-line}
+#vtip[hidden]{display:none}
+/* floor map: 2 columns x 7 rows, numbered down the left column (1-7) then the right (8-14) */
+#floormap{margin-bottom:16px;display:grid;gap:8px}
+#floormap[hidden]{display:none}
+.timer{font-family:var(--mono);font-weight:600;font-size:14px;color:var(--accent);background:var(--accent-soft);border-radius:6px;padding:2px 7px;min-width:52px;text-align:center}
+.testing-now .timer{font-size:17px;padding:5px 10px;align-self:center}
+.lastdur{font-size:11.5px;color:var(--muted);white-space:nowrap}
+#view-give .page{padding-top:0}
+.gsticky{position:sticky;top:0;z-index:6;border-top-left-radius:0;border-top-right-radius:0;box-shadow:0 6px 16px rgba(0,0,0,.08);padding-top:14px}
+.gsticky h2{font-size:16px}
+.gchips{display:flex;flex-wrap:wrap;gap:8px}
+.gchip{border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:6px 14px;font-weight:600;display:inline-flex;gap:6px;align-items:center}
+.gchip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.gbadge{background:var(--warn);color:#fff;border-radius:999px;font-size:11.5px;padding:0 7px;line-height:18px}
+.gtable td,.gtable th{vertical-align:middle}
+.gtable .gh{text-align:center}
+.gtable thead th{position:sticky;top:var(--gstick,110px);z-index:4;background:var(--card);box-shadow:0 1px 0 var(--line)}
+.gwrap{overflow:visible}
+.gtable tr.pend td.sname{font-weight:700}
+.gcell{text-align:center}
+.gcell label{display:inline-flex;align-items:center;gap:8px;cursor:pointer;padding:3px 8px;border-radius:7px;border:1px solid var(--line);background:var(--card)}
+.gcell.told label{background:var(--paper);opacity:.65}
+.gcell input{width:18px;height:18px;cursor:pointer;accent-color:var(--pass)}
+.gcell.empty{color:var(--line)}
+.gmeta{font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap;font-weight:400}
+.gins{color:var(--ink);font-weight:600}
+.gwait.long{color:var(--warn);font-weight:700}
+.gres{font-family:var(--mono);font-weight:700;font-size:12.5px;padding:1px 6px;border-radius:4px}
+.gres.p{background:var(--pass-soft);color:var(--pass)}
+.gres.f{background:var(--fail-soft);color:var(--fail)}
+.clockbox{cursor:default;font-variant-numeric:tabular-nums;min-width:96px;text-align:center}
+.clockbox:hover{border-color:var(--line)}
+.floorpage{max-width:980px;height:100%;margin:0 auto;padding:10px 18px 12px;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;gap:6px}
+@media (max-height:620px){ #view-floor{overflow:auto} .floorpage{height:auto} }
+.fp-head{display:flex;flex-wrap:wrap;gap:18px;align-items:baseline}
+.fp-head h2{font-size:17px}
+.fm-grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(7,minmax(44px,1fr));gap:5px;min-height:0}
+.front{text-align:center;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);border-top:3px solid var(--ink);padding-top:3px;font-weight:700}
+.slot{min-height:0;border:1.5px dashed var(--line);border-radius:8px;display:flex;align-items:stretch;gap:0;position:relative;background:transparent}
+.slot .no{font-family:var(--display);font-weight:800;font-size:17px;width:34px;display:flex;align-items:center;justify-content:center;color:var(--muted);flex:none}
+.slot.over{border-color:var(--accent);background:var(--accent-soft)}
+.slot.pickable{border-color:var(--accent)}
+.fm-card{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--line);border-radius:6px;margin:3px 3px 3px 0;padding:3px 8px;cursor:grab;display:flex;gap:8px;align-items:center;font-size:12.5px;line-height:1.25}
+.fm-card .info{flex:1;min-width:0;display:grid}
+.fm-card .stu{font-size:14.5px;font-weight:700;font-family:var(--display);color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fm-card .tline{display:flex;align-items:center;gap:6px;min-width:0}
+.fm-card .tline b{flex:none;max-width:45%}
+.fm-card select.fskill{min-width:0;max-width:150px;font-size:12px;font-weight:600;padding:0 4px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink);cursor:pointer}
+.fm-card select.fskill:disabled{border-color:transparent;background:transparent;opacity:1;cursor:default;appearance:none;-webkit-appearance:none;padding:0}
+.asst{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+.asst b{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.asst select.fasst{flex:1;min-width:0;max-width:180px}
+.asst .btn{padding:0 8px;font-size:12px;line-height:1.5}
+.fm-card select.fsel{padding:0 4px}
+.xbtn{padding:0 6px !important;line-height:1.2}
+.fm-card .nextline{display:flex;align-items:center;gap:4px;overflow:visible}
+.fm-card select.fsel{flex:1;min-width:0;max-width:100%;font-size:12.5px;font-weight:600;padding:1px 4px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink);cursor:pointer}
+.fm-card .acts{display:flex;gap:4px;align-items:center;flex:none}
+.fm-card .acts .btn{padding:3px 9px;font-size:12px;min-width:0}
+.fm-card:active{cursor:grabbing}
+.fm-card b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fm-card .s{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fm-card.busy{border-left-color:var(--accent)} .fm-card.busy .s{color:var(--accent);font-weight:600}
+.fm-card.has{border-left-color:var(--pass)}
+.fm-card.away{opacity:.5}
+.fm-card.picked{outline:2px solid var(--accent);outline-offset:1px}
+.slot.filled{border-style:solid;border-color:transparent}
+.slot .blk{margin-left:auto;align-self:center;margin-right:6px;opacity:0;transition:opacity .15s}
+.slot:hover .blk,.slot .blk:focus-visible{opacity:1}
+.fm-card .acts .blk{margin:0}
+@media (hover:none){ .slot .blk{opacity:.7} }
+.slot.blocked{border-style:solid;border-color:var(--line);background:repeating-linear-gradient(45deg, var(--line) 0 6px, transparent 6px 14px)}
+.slot.blocked .bl{align-self:center;font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--paper);padding:2px 8px;border-radius:4px}
+.slot.blocked .blk{opacity:1;background:var(--paper)}
+.notechip{display:block;max-width:100%;text-align:left;border:1px solid var(--warn);background:var(--warn-soft);color:var(--ink);border-radius:5px;padding:1px 6px;font-size:11.5px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.notechip b{color:var(--warn);font-weight:700}
+.slot .slotinfo{display:grid;gap:3px;align-content:center;min-width:0;flex:1;padding:4px 0}
+.slot .slotbtns{display:flex;gap:4px;align-items:center;margin-left:auto;margin-right:6px;flex:none}
+.notebar{border:1px solid var(--warn);background:var(--warn-soft);border-radius:7px;padding:6px 10px;font-size:13.5px;display:flex;gap:8px;align-items:center}
+.notebar b{color:var(--warn)}
+.tray{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:34px;padding:4px 6px;border:1.5px dashed var(--line);border-radius:8px;font-size:12.5px;color:var(--muted)}
+.tray.over{border-color:var(--accent);background:var(--accent-soft)}
+.tray .fm-card{flex:none;margin:0;border-left-width:1px;padding:5px 9px}
+.stnbadge{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:26px;padding:0 6px;border-radius:6px;background:var(--ink);color:var(--paper);font-family:var(--display);font-weight:800;font-size:14px}
+.stnbadge.none{background:var(--paper);color:var(--muted);border:1px dashed var(--line);font-weight:600;font-size:12px}
+/* station cards */
+.stations{display:grid;gap:12px}
+.station{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:10px;border-left:5px solid var(--line)}
+.station.busy{border-left-color:var(--accent)}
+.station.idle.has{border-left-color:var(--pass)}
+.station.idle.none{border-left-color:var(--line)}
+.station.break{opacity:.6}
+.st-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.st-head h3{font-size:16px;font-weight:700}
+.st-head select{margin-left:auto;max-width:230px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}
+.st-head label.brk{font-size:12.5px;color:var(--muted);display:flex;gap:4px;align-items:center}
+.testing-now{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--accent-soft);border-radius:8px;padding:10px 12px}
+.testing-now .who{font-weight:600;font-size:16px}
+.testing-now .meta{color:var(--muted);font-size:13px}
+.testing-now .btns{margin-left:auto;display:flex;gap:6px}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:7px;padding:7px 14px;font-weight:600}
+.btn:hover{border-color:var(--accent)}
+.btn.pass{background:var(--pass);border-color:var(--pass);color:#fff;min-width:78px}
+.btn.fail{background:var(--fail);border-color:var(--fail);color:#fff;min-width:78px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{color:var(--fail);border-color:var(--fail)}
+.btn.small{padding:4px 10px;font-size:13px}
+.btn.ghost{background:none;border-color:transparent;color:var(--muted)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.next{display:grid;gap:6px}
+.next .lbl{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+.cand{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:7px}
+.cand:first-of-type{border-color:var(--pass);background:var(--pass-soft)}
+.cand .nm{font-weight:600}
+.cand .tag{font-size:12px;padding:1px 7px;border-radius:999px;background:var(--paper);border:1px solid var(--line);color:var(--muted)}
+.cand .tag.re{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.cand .btn{margin-left:auto}
+.more{display:flex;gap:6px;align-items:center}
+.more select{flex:1;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}
+.why{font-size:13px;color:var(--muted)}
+details.skip{border-top:1px dashed var(--line);padding-top:8px;display:grid;gap:6px}
+details.skip summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--warn)}
+details.skip[open]{display:grid}
+details.skip .more{margin-top:6px}
+table.grid tr.away td{opacity:.5}
+table.grid tr.away td:first-child{opacity:1}
+.why ul{margin:4px 0 0;padding-left:18px}
+
+/* student grid */
+.stats{display:flex;flex-wrap:wrap;gap:18px}
+.stat{display:flex;flex-direction:column}
+.stat .v{font-family:var(--display);font-size:22px;font-weight:700;line-height:1.1}
+.stat .l{font-size:12px;color:var(--muted)}
+.stat.pass .v{color:var(--pass)} .stat.fail .v{color:var(--fail)} .stat.acc .v{color:var(--accent)}
+.tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tools input,.tools select{padding:5px 9px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}
+.tools input{min-width:180px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);align-items:center}
+.tablewrap{overflow-x:auto}
+table.grid{border-collapse:separate;border-spacing:0;width:100%;font-size:14px}
+table.grid th{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;text-align:center;padding:6px 4px;border-bottom:1px solid var(--line);position:sticky;top:-14px;background:var(--paper);white-space:nowrap}
+table.grid th.l{text-align:left}
+table.grid td{padding:5px 4px;border-bottom:1px solid var(--line);text-align:center;vertical-align:middle}
+table.grid td.l{text-align:left}
+table.grid tbody tr{cursor:pointer}
+table.grid tbody tr:hover td{background:var(--accent-soft)}
+table.grid tr.wd td{opacity:.45}
+.sname{font-weight:600;white-space:nowrap}
+.cell{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:24px;border-radius:5px;font-family:var(--mono);font-size:12.5px;font-weight:600;padding:0 4px}
+.c-none{color:var(--line)}
+/* Retest shades: 1st try = light, 2nd = medium, 3rd = solid. Bigger steps so retests stand out at a glance. */
+:root{ --p2bg:#8fd3a8; --p2tx:#0f3d23; --p3bg:#1e7a46; --p3tx:#ffffff;
+       --f2bg:#f2b84b; --f2tx:#4a2b00; --f3bg:#b42318; --f3tx:#ffffff; }
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --p2bg:#2f8a57; --p2tx:#ffffff; --p3bg:#7fdca4; --p3tx:#0b2416; --f2bg:#b07a1c; --f2tx:#ffffff; --f3bg:#f07a6e; --f3tx:#2a0906; } }
+:root[data-theme="dark"]{ --p2bg:#2f8a57; --p2tx:#ffffff; --p3bg:#7fdca4; --p3tx:#0b2416; --f2bg:#b07a1c; --f2tx:#ffffff; --f3bg:#f07a6e; --f3tx:#2a0906; }
+.c-pass,.c-p1{background:var(--pass-soft);color:var(--pass)}
+.c-p2{background:var(--p2bg);color:var(--p2tx)}
+.c-p3{background:var(--p3bg);color:var(--p3tx)}
+.c-fail,.c-f1{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn)}
+.c-f2{background:var(--f2bg);color:var(--f2tx);border:1px solid var(--f2bg)}
+.c-wait{background:transparent;color:var(--warn);border:1px dashed var(--warn)}
+.c-f1.w,.c-f2.w{border-style:dashed;border-width:2px}
+.c-f1.w{background:transparent}
+.c-f3,.c-lock{background:var(--f3bg);color:var(--f3tx)}
+.c-now{background:var(--accent);color:#fff}
+.chip{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap;background:var(--card)}
+.chip.now{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.chip.ok{background:var(--pass-soft);border-color:var(--pass);color:var(--pass)}
+.chip.bad{background:var(--fail-soft);border-color:var(--fail);color:var(--fail)}
+.chip.wd{color:var(--muted)}
+.empty{padding:28px;border:1px dashed var(--line);border-radius:10px;text-align:center;color:var(--muted);background:var(--card)}
+.empty .btn{margin-top:10px}
+
+/* results + setup */
+.page{max-width:1080px;margin:0 auto;padding:22px 18px 60px;display:grid;gap:22px}
+.view.scroll{overflow:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:grid;gap:12px}
+.card h2{font-size:17px;font-weight:700}
+.card p.hint{margin:0;color:var(--muted);font-size:13.5px;max-width:70ch}
+table.plain{border-collapse:collapse;width:100%;font-size:14px}
+table.plain th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+table.plain td{padding:7px 8px;border-bottom:1px solid var(--line)}
+table.plain td.n,table.plain th.n{text-align:right}
+.bar{display:inline-block;height:8px;border-radius:4px;background:var(--line);width:90px;vertical-align:middle;margin-left:8px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--pass)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.field{display:grid;gap:4px}
+.field label{font-size:13px;font-weight:600}
+input.txt,textarea.txt,select.txt{padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--paper);width:100%}
+textarea.txt{min-height:110px;resize:vertical}
+.list{display:grid;gap:6px}
+.li{display:flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--paper)}
+.li .grow{flex:1;min-width:0}
+.li input.txt{background:var(--card)}
+.li input.short{max-width:120px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media (max-width:820px){.two{grid-template-columns:1fr}}
+.danger-zone{border-color:var(--fail)}
+.danger-zone h2{color:var(--fail)}
+.warnline{color:var(--warn);font-weight:600;font-size:13.5px}
+
+/* modal + toast */
+.modal-bg{position:fixed;inset:0;background:rgba(10,16,24,.45);display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;z-index:20;overflow:auto}
+.modal-bg[hidden]{display:none}
+.modal{background:var(--card);border-radius:12px;max-width:720px;width:100%;padding:18px 20px;display:grid;gap:14px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.modal h2{font-size:20px}
+.modal .x{margin-left:auto}
+.att{display:flex;gap:8px;align-items:center;font-size:14px;padding:4px 0;border-bottom:1px dashed var(--line)}
+.att:last-child{border-bottom:0}
+.att .r{font-family:var(--mono);font-weight:600;width:20px}
+.att .r.P{color:var(--pass)} .att .r.F{color:var(--fail)}
+.att .t{color:var(--muted);font-size:12.5px}
+.att .btn{margin-left:auto}
+.skillblock{border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.skillblock h3{font-size:14px;display:flex;gap:8px;align-items:center}
+.toasts{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:grid;gap:8px;z-index:30;width:min(560px,calc(100% - 32px))}
+.toast{background:var(--ink);color:var(--paper);border-radius:9px;padding:10px 14px;display:flex;gap:12px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.25);font-size:14px}
+.toast .btn{background:transparent;color:var(--paper);border-color:var(--paper);margin-left:auto}
+.toasts,.toast{pointer-events:none}
+.toast .btn{pointer-events:auto}
+.toast.bad{background:var(--fail);color:#fff}
+@media (prefers-reduced-motion: no-preference){ .toast{animation:pop .18s ease-out} @keyframes pop{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}} }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>EMT Skills Testing</h1>
+  <div class="classes" id="classTabs" role="tablist" aria-label="Class"></div>
+  <span class="sem" id="semLabel"></span>
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-floor" data-tab="floor" aria-selected="false">Floor</button>
+    <button role="tab" id="tab-testing" data-tab="testing" aria-selected="true">Testing</button>
+    <button role="tab" id="tab-give" data-tab="give" aria-selected="false">Give results</button>
+    <button role="tab" id="tab-results" data-tab="results" aria-selected="false">Results</button>
+    <button role="tab" id="tab-setup" data-tab="setup" aria-selected="false">Setup</button>
+  </nav>
+  <span class="savestate" id="saveState">Connecting…</span>
+  <span class="acct" id="acct"></span>
+</header>
+<div class="signin" id="signin" hidden>
+  <div class="signin-card">
+    <h1>EMT Skills Testing</h1>
+    <p>Sign in with the Google account that owns this tracker.</p>
+    <button class="btn primary" id="signinBtn">Sign in with Google</button>
+    <p class="why" id="signinMsg"></p>
+    <p class="why">Instructors: open <b>station.html</b> on this site and enter your station code instead.</p>
+  </div>
+</div>
+<div class="banner" id="banner" hidden></div>
+<div class="pausedbar" id="pausedBar" hidden></div>
+<main>
+  <section class="view" id="view-floor" hidden><div class="floorpage"><div class="fp-head" id="floorHead"></div><div id="floormap"></div></div></section>
+  <section class="view" id="view-testing">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="row"><h2>Testing floor</h2><span id="testingTools" class="row" style="margin-left:auto;gap:6px"></span></div>
+        <div class="demand" id="demand"></div>
+      </div>
+      <div class="panel-body"><div class="stations" id="stations"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Student packets</h2>
+        <div class="stats" id="stats"></div>
+        <div class="tools">
+          <input type="search" id="search" placeholder="Find a student">
+          <select id="sortBy" aria-label="Sort students">
+            <option value="name">Sort: last name</option>
+            <option value="left">Sort: most skills left</option>
+            <option value="status">Sort: status</option>
+            <option value="fewest">Sort: fewest tests taken</option>
+            <option value="idle">Sort: waiting longest</option>
+          </select>
+          <div class="legend">
+            <span><span class="cell c-p1">P1</span><span class="cell c-p2">P2</span><span class="cell c-p3">P3</span> passed on try 1/2/3</span>
+            <span><span class="cell c-f1">F1</span><span class="cell c-f2">F2</span> retest ready</span>
+            <span><span class="cell c-f1 w">F1</span> retest waiting</span>
+            <span><span class="cell c-f3">F3</span> failed 3×, locked</span>
+            <span><span class="cell c-now">●</span> testing</span>
+            <span><span class="cell c-wait">1</span> tests behind</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel-body"><div class="tablewrap" id="gridWrap"></div></div>
+    </div>
+  </section>
+
+  <section class="view scroll" id="view-give" hidden><div class="page" id="give"></div></section>
+  <section class="view scroll" id="view-results" hidden><div class="page" id="results"></div></section>
+  <section class="view scroll" id="view-setup" hidden><div class="page" id="setup"></div></section>
+</main>
+
+<div class="modal-bg" id="modalBg" hidden><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+<div class="toasts" id="toasts"></div>
+<div id="vtip" hidden></div>
+
+<script>
+"use strict";
+/* ---------- defaults (from the program's skills cover sheet) ---------- */
+const DEFAULT_CONFIG = {
+  semester: "",
+  core: [
+    {id:"pa-trauma",  name:"Patient Assessment / Management - Trauma",  short:"Trauma"},
+    {id:"pa-medical", name:"Patient Assessment / Management - Medical", short:"Medical"},
+    {id:"bvm",        name:"BVM Ventilation of an Apneic Adult Patient", short:"BVM"},
+    {id:"cardiac",    name:"Cardiac Arrest Management / AED",           short:"CPR", assist:true},
+    {id:"o2",         name:"Oxygen Administration by NRB Mask",         short:"O2 NRB"},
+    {id:"bleeding",   name:"Bleeding Control / Shock Management",       short:"Bleeding"}
+  ],
+  pool: [
+    {id:"spinal-seated", name:"Spinal Immobilization (Seated)", short:"Seated SI"},
+    {id:"spinal-supine", name:"Spinal Immobilization (Supine)", short:"Supine SI"},
+    {id:"long-bone",     name:"Long Bone Immobilization",       short:"Long bone"},
+    {id:"joint",         name:"Joint Immobilization",           short:"Joint"}
+  ],
+  chosen: [],
+  instructors: [],
+  students: []
+};
+const MAX_ATTEMPTS = 3;
+const RANDOM_COUNT = 2;
+
+/* ---------- state ---------- */
+let db = null;
+let cfg = clone(DEFAULT_CONFIG);
+let live = {stations:{}};
+let attempts = [];          // [{id, studentId, skillId, instructorId, instructorName, result:"P"|"F", at, startedAt}]
+let loaded = {cfg:false, live:false, att:false};
+let writable = false;
+let ui = {giveSkill:null, asstPick:{}, asstOpen:{}, floorPick:{}, tab:"testing", search:"", sort:"name", ovOpen:{}, pick:null, dragging:false, mapHidden:false};
+let classes = [];           // [{id, name}]
+let cls = null;             // current class id
+let unsubs = [];
+const P = {
+  index: ()=>"app/classes",
+  cfg:   c=>"classes/"+c,
+  live:  c=>"classes/"+c+"/state/live",
+  att:   c=>"classes/"+c+"/attempts"
+};
+function className(id){ const c=classes.find(x=>x.id===id); return c? c.name : ""; }
+
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+function uid(p){ return (p||"") + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+const $ = id => document.getElementById(id);
+
+/* ---------- derived data ---------- */
+function activeSkills(){ return [...cfg.core, ...cfg.pool.filter(s=>cfg.chosen.includes(s.id))]; }
+function allSkills(){ return [...cfg.core, ...cfg.pool]; }
+function skill(id){ return allSkills().find(s=>s.id===id); }
+/* Instructors are shared by all classes (doc app/instructors). An instructor typed into two classes
+   before sharing existed is merged by name; their older id is kept in "alt" so past results still match. */
+let sharedIns = null;        // null until loaded
+let altMap = {};             // old id -> canonical id
+function canon(id){ return altMap[id] || id; }
+function setShared(list){
+  sharedIns = list; altMap = {};
+  for(const i of list) for(const a of (i.alt||[])) altMap[a] = i.id;
+  cfg.instructors = sharedIns;
+  normalizeLive();
+}
+function normalizeLive(){
+  for(const k of Object.keys(live.stations||{})){
+    const c = canon(k);
+    if(c!==k){ if(!live.stations[c]) live.stations[c] = live.stations[k]; delete live.stations[k]; }
+  }
+}
+function saveInstructors(){ const body = {list: clone(sharedIns||[])}; scheduleCodeSync(); return enqueue("app/instructors", ()=>retry(()=>db.doc("app/instructors").set(body))); }
+function instructor(id){ id = canon(id); return cfg.instructors.find(i=>i.id===id); }
+function student(id){ return cfg.students.find(s=>s.id===id); }
+function activeStudents(){ return cfg.students.filter(s=>!s.withdrawn); }
+function sname(s){ return s ? (s.last + ", " + s.first + (s.mi? " "+s.mi+".":"")) : "(removed student)"; }
+function iname(id, fallback){ const i=instructor(id); return i? i.name : (fallback || "(removed instructor)"); }
+
+let idx = null; // per-render cache: key "sid|kid" -> sorted attempts
+function buildIndex(){
+  idx = new Map();
+  const sorted = attempts.slice().sort((a,b)=> (a.at||"").localeCompare(b.at||""));
+  for(const a of sorted){
+    const k = a.studentId+"|"+a.skillId;
+    if(!idx.has(k)) idx.set(k, []);
+    idx.get(k).push(a);
+  }
+}
+function rec(sid, kid){
+  const list = idx.get(sid+"|"+kid) || [];
+  let passed=false, fails=0;
+  const instr = new Set();
+  for(const a of list){ instr.add(canon(a.instructorId)); if(a.result==="P") passed=true; else fails++; }
+  return {list, n:list.length, passed, fails, locked: !passed && fails>=MAX_ATTEMPTS, instr};
+}
+function stationOf(sid){
+  for(const [iid, st] of Object.entries(live.stations||{})) if(st && st.studentId===sid) return iid;
+  return null;
+}
+/* Assistant EMT: a second student who helps at a station (e.g. CPR) without being tested.
+   Assisting records no attempt, so the student's place in line is unchanged. */
+function assistingAt(sid){
+  for(const [iid, st] of Object.entries(live.stations||{})) if(st && st.studentId && st.assistantId===sid) return iid;
+  return null;
+}
+function needsAssist(k){ return !!k && (k.assist!==undefined ? !!k.assist : k.id==="cardiac"); }
+/* Who to offer as assistant: students done with everything first, then the back of the line
+   (most tests taken, most recently tested). Excludes anyone testing, assisting, away or withdrawn. */
+function assistantCandidates(iid, mainId){
+  const st = live.stations[iid] || {};
+  const main = mainId || st.studentId;
+  const list = activeStudents().filter(s=>!s.away && s.id!==main && !stationOf(s.id) && !assistingAt(s.id));
+  const queue = st.skillId ? suggestions(iid).ok.map(c=>c.s.id) : [];
+  const rank = id => { const i = queue.indexOf(id); return i<0 ? 1e6 : i; };
+  /* Default assistant: if anyone free still needs this skill, the LONGEST-waiting of them (they rotate in next).
+     Only when everyone free has already tested this skill: the SHORTEST-waiting student. */
+  const kid = st.skillId;
+  return list.map(s=>{ const r = kid ? rec(s.id,kid) : {passed:false, locked:false}; return {s, x:studentSummary(s), t:testsTaken(s.id), last:lastActivity(s.id), needs: !(r.passed||r.locked)}; })
+    .sort((a,b)=> (a.needs?0:1)-(b.needs?0:1)
+      || (!a.needs ? (b.last||"").localeCompare(a.last||"")                                  // done with it: shortest wait first
+                   : rank(a.s.id)-rank(b.s.id) || (a.last||"").localeCompare(b.last||""))   // still needs it: longest wait first
+      || sname(a.s).localeCompare(sname(b.s)));
+}
+/* After a result at an assistant station: last round's assistant tests next, and the student who just tested assists. */
+function swapPair(iid){
+  const st = live.stations[iid]; const lp = st && st.lastPair;
+  if(!lp || st.studentId || lp.skillId!==st.skillId) return null;
+  const a = student(lp.asst), m = student(lp.main);
+  if(!a || !m || m.away || m.withdrawn || stationOf(m.id) || assistingAt(m.id)) return null;
+  if(!eligibility(lp.asst, st.skillId, iid).ok) return null;
+  return {main: lp.asst, asst: lp.main};
+}
+/* Mid-test: swap who is being tested and who is assisting (e.g. they were sent the wrong way round). */
+function swapAtStation(iid){
+  if(!guard()) return;
+  const st = live.stations[iid]; if(!st || !st.studentId || !st.assistantId) return;
+  const m = st.studentId, a = st.assistantId;
+  st.assistantId = null; st.studentId = null;
+  const e = eligibility(a, st.skillId, iid);
+  st.studentId = m; st.assistantId = a;
+  if(!e.ok){ toast(`Can't swap: ${sname(student(a))} — ${e.reason}`, {bad:true}); return; }
+  st.studentId = a; st.assistantId = m; st.startedAt = new Date().toISOString(); st.override = null;
+  renderAll(); saveLive();
+  toast(`Swapped: ${sname(student(a))} is testing, ${sname(student(m))} is assisting`);
+}
+/* Send from a Testing-tab card, bringing the assistant picked on that card (if any). */
+function sendWithAssistant(iid, sid, card){
+  const as = card && card.querySelector("select.tasst");
+  let aid = as ? as.value : "";
+  delete ui.asstPick[iid];
+  sendStudent(iid, sid);
+  const st = live.stations[iid];
+  if(!aid || !st || st.studentId!==sid) return;
+  if(aid===sid){ const c = assistantCandidates(iid); aid = c[0] ? c[0].s.id : ""; }   // picked the same person: use the next one in line
+  if(aid) setAssistant(iid, aid);
+}
+function setAssistant(iid, sid){
+  if(!guard()) return;
+  const st = live.stations[iid]; if(!st || !st.studentId) return;
+  if(sid && (stationOf(sid) || assistingAt(sid))){ toast("That student is busy at another station."); return; }
+  st.assistantId = sid || null;
+  renderAll(); saveLive();
+  if(sid){ const k=skill(st.skillId); toast(`Send ${sname(student(sid))} to ${slotOf(iid)?"Station "+slotOf(iid)+" · ":""}${iname(iid)} as assistant${k?" for "+k.short:""}`); }
+}
+function assistHtml(iid, floor){
+  const st = live.stations[iid] || {};
+  if(!st.studentId) return "";
+  const k = skill(st.skillId);
+  if(st.assistantId){
+    return `<span class="asst">Asst: <b>${esc(sname(student(st.assistantId)))}</b> <button class="btn small ghost xbtn" data-act="asstswap" data-iid="${iid}" title="Swap: assistant tests, tester assists" aria-label="Swap tester and assistant">⇄</button><button class="btn small ghost xbtn" data-act="asstrm" data-iid="${iid}" title="Remove assistant" aria-label="Remove assistant">✕</button></span>`;
+  }
+  if(!needsAssist(k) && !ui.asstOpen[iid]) return `<button class="btn small ghost" data-act="asstshow" data-iid="${iid}" style="justify-self:start;padding:0 6px;font-size:12px">+ Assistant</button>`;
+  const c = assistantCandidates(iid);
+  if(!c.length) return `<span class="asst why">No one free to assist</span>`;
+  const opts = c.map((r,i)=>`<option value="${r.s.id}">${esc(sname(r.s))}${!r.x.left?" (done)":""}</option>`).join("");
+  const keep = ui.asstPick[iid];
+  return `<span class="asst">Asst: <select class="fsel fasst" id="asst-${floor?"f":"t"}-${iid}" data-act="asstsel" data-iid="${iid}" draggable="false" aria-label="Assistant EMT">${opts.replace(`value="${keep}"`, `value="${keep}" selected`)}</select><button class="btn small" data-act="asstadd" data-iid="${iid}">Add</button></span>`;
+}
+function testsTaken(sid){ let n=0; for(const a of attempts) if(a.studentId===sid) n++; return n; }
+/* Clock pause (per lab): paused stretches, e.g. overnight or until next week, don't count toward any waiting time or timer. */
+function clockState(){ return live.clock || {pausedAt:null, pauses:[]}; }
+function isPaused(){ return !!clockState().pausedAt; }
+function activeMs(fromIso, toMs){
+  if(!fromIso) return 0;
+  const from = Date.parse(fromIso), to = toMs==null ? Date.now() : toMs;
+  let ms = to - from;
+  const c = clockState();
+  const spans = (c.pauses||[]).map(p=>[Date.parse(p.s), Date.parse(p.e)]);
+  if(c.pausedAt) spans.push([Date.parse(c.pausedAt), to]);
+  for(const [a,b] of spans){ const o = Math.min(b,to) - Math.max(a,from); if(o>0) ms -= o; }
+  return Math.max(0, ms);
+}
+function minsText(m){ return m<60? m+" min" : Math.floor(m/60)+" hr "+(m%60)+" min"; }
+function sinceText(iso){
+  if(!iso) return "no tests yet";
+  const m = Math.floor(activeMs(iso)/60000);
+  if(m >= 12*60) return "last " + new Date(iso).toLocaleDateString(undefined,{weekday:"short"});
+  return m<1? "just finished" : minsText(m)+" ago";
+}
+function setPaused(on){
+  if(!guard()) return;
+  const c = Object.assign({pausedAt:null, pauses:[]}, clone(clockState()));
+  if(on && !c.pausedAt) c.pausedAt = new Date().toISOString();
+  if(!on && c.pausedAt){ c.pauses = (c.pauses||[]).concat([{s:c.pausedAt, e:new Date().toISOString()}]).slice(-50); c.pausedAt = null; }
+  live.clock = c; renderAll(); saveLive();
+  toast(on ? "Clocks paused. Waiting times and timers are frozen until you resume." : "Clocks resumed.");
+}
+function pauseBtn(){ return isPaused()
+  ? `<button class="btn small paused" data-act="resumeclock" title="Clocks paused since ${esc(fmtTime(clockState().pausedAt))}">▶ Resume clocks</button>`
+  : `<button class="btn small" data-act="pauseclock" title="Freeze all waiting times and timers, e.g. at the end of the day">❚❚ Pause clocks</button>`; }
+/* Students falling behind: present, still testing, and 2+ tests below the class median. */
+function behindSet(){
+  const pool = activeStudents().filter(s=>!s.away && studentSummary(s).left>0);
+  const counts = pool.map(s=>testsTaken(s.id)).sort((a,b)=>a-b);
+  const out = new Set();
+  if(!counts.length) return out;
+  const med = counts[Math.floor((counts.length-1)/2)];
+  if(med < 2) return out;
+  for(const s of pool) if(testsTaken(s.id) <= med-2 && !stationOf(s.id)) out.add(s.id);
+  return out;
+}
+function lastActivity(sid){
+  let t = "";
+  for(const a of attempts) if(a.studentId===sid && !a.manual && a.at > t) t = a.at;   // manual entries don't reset the waiting clock
+  return t;
+}
+// Students who still owe a FIRST attempt on this skill (active, not yet attempted). In-progress first attempts count as owed.
+function firstAttemptsOwed(kid){
+  return activeStudents().filter(s => !s.away && rec(s.id,kid).n===0);
+}
+function studentSummary(s){
+  const sk = activeSkills();
+  let passed=0, locked=0;
+  for(const k of sk){ const r=rec(s.id,k.id); if(r.passed) passed++; else if(r.locked) locked++; }
+  const left = sk.length - passed - locked;
+  const at = stationOf(s.id);
+  let status;
+  const asst = at ? null : assistingAt(s.id);
+  if(s.withdrawn) status = "withdrawn";
+  else if(at) status = "testing";
+  else if(asst) status = "assisting";
+  else if(s.away) status = "away";
+  else if(sk.length && passed===sk.length) status = "complete";
+  else if(locked>0 && left===0) status = "failed";
+  else status = "waiting";
+  return {passed, locked, left, at, asst, status, total: sk.length};
+}
+/* Can student sid test skill kid with instructor iid right now? */
+function eligibility(sid, kid, iid){
+  const s = student(sid);
+  if(!s) return {ok:false, reason:"Not on the roster"};
+  if(s.withdrawn) return {ok:false, reason:"Withdrawn"};
+  const r = rec(sid, kid);
+  if(r.passed) return {ok:false, reason:"Already passed", done:true};
+  if(r.locked) return {ok:false, reason:"Failed 3 times (locked)", done:true};
+  const at = stationOf(sid);
+  if(at) return {ok:false, reason:"Testing with " + iname(at) + " now", busy:true};
+  const as = assistingAt(sid);
+  if(as) return {ok:false, reason:"Assisting " + iname(as) + " now", busy:true};
+  if(s.away) return {ok:false, reason:"Marked not here", away:true, overridable:true, retest:r.n>0, attemptNo:r.n+1};
+  if(r.n===0) return {ok:true, retest:false, attemptNo:1};
+  const owed = firstAttemptsOwed(kid).filter(o=>o.id!==sid);
+  if(owed.length) return {ok:false, reason:`Retest waits: ${owed.length} student${owed.length>1?"s":""} still need a first attempt`, waiting:true, overridable:true, retest:true, attemptNo:r.n+1};
+  if(iid && r.instr.has(iid)) return {ok:false, reason:`Already tested this skill with ${iname(iid)}`, sameInstr:true, overridable:true, retest:true, attemptNo:r.n+1};
+  return {ok:true, retest:true, attemptNo:r.n+1};
+}
+function suggestions(iid){
+  const st = live.stations[iid];
+  if(!st || !st.skillId) return {ok:[], blocked:[]};
+  const kid = st.skillId;
+  const ok=[], blocked=[];
+  for(const s of activeStudents()){
+    const e = eligibility(s.id, kid, iid);
+    if(e.ok) ok.push({s, e, left: studentSummary(s).left, last: lastActivity(s.id), taken: testsTaken(s.id)});
+    else if(!e.done) blocked.push({s, e});
+  }
+  ok.sort((a,b)=>
+    (a.e.retest?1:0)-(b.e.retest?1:0) ||      // first attempts before retests
+    a.taken - b.taken ||                        // fewest tests taken goes first
+    (a.last||"").localeCompare(b.last||"") ||   // then whoever has waited longest
+    b.left - a.left ||                          // then most skills left
+    sname(a.s).localeCompare(sname(b.s)));
+  return {ok, blocked};
+}
+function skillDemand(k){
+  let first=0, ready=0, waiting=0, testing=0, done=0;
+  const owed = firstAttemptsOwed(k.id).length;
+  for(const s of activeStudents()){
+    const r = rec(s.id,k.id);
+    const at = stationOf(s.id);
+    if(at && live.stations[at].skillId===k.id){ testing++; continue; }
+    if(r.passed || r.locked){ done++; continue; }
+    if(s.away) continue;
+    if(r.n===0) first++;
+    else if(owed===0) ready++; else waiting++;
+  }
+  const stations = Object.entries(live.stations).filter(([iid,st])=>st && st.skillId===k.id && !st.onBreak && instructor(iid)).length;
+  return {first, ready, waiting, testing, done, stations};
+}
+
+/* ---------- persistence ---------- */
+const queues = {};
+let pending = 0;
+function setSave(text, bad){ const el=$("saveState"); el.textContent=text; el.classList.toggle("bad", !!bad); }
+function enqueue(key, fn){
+  pending++; setSave("Saving…");
+  const run = (queues[key]||Promise.resolve()).then(fn);
+  queues[key] = run.catch(()=>{});
+  return run.then(()=>{ if(--pending===0) setSave("All saved"); },
+    e=>{ pending--; handleWriteError(e); throw e; });
+}
+function handleWriteError(e){
+  const code = e && e.code;
+  if(code==="invalid_argument" || code==="permission-denied"){ writable=false; showBanner("This account can't change the tracker. Sign in with the owner's Google account."); }
+  else if(code==="quota_exceeded" || code==="resource-exhausted") toast("Storage limit reached: " + (e.message||"") , {bad:true});
+  else toast("Couldn't save that change. Check your connection and try again.", {bad:true});
+  setSave("Not saved", true);
+}
+async function retry(fn){ try{ return await fn(); } catch(e){ if(e && e.code==="unavailable"){ await new Promise(r=>setTimeout(r, 400+Math.random()*600)); return fn(); } throw e; } }
+function saveCfg(){ const body = clone(cfg), path = P.cfg(cls); if(sharedIns) delete body.instructors; return enqueue(path, ()=>retry(()=>db.doc(path).set(body))); }
+function saveLive(){ const body = clone(live), path = P.live(cls); scheduleCodeSync(); return enqueue(path, ()=>retry(()=>db.doc(path).set(body))); }
+function saveAttempt(a){ const col = P.att(cls), body = clone(a); return enqueue(col+"/"+a.id, ()=>retry(()=>db.collection(col).doc(a.id).set(body))); }
+function deleteAttempt(id){ const col = P.att(cls); return enqueue(col+"/"+id, ()=>retry(()=>db.collection(col).doc(id).delete())); }
+function saveClasses(){ const body = {list: clone(classes)}; return enqueue(P.index(), ()=>retry(()=>db.doc(P.index()).set(body))); }
+
+function guard(){
+  if(!db){ toast("Saved data isn't available. Sign in to Claude and reopen this page.", {bad:true}); return false; }
+  if(!writable){ toast("Only the tracker's owner can change it.", {bad:true}); return false; }
+  if(!cls){ toast("Still loading your classes. Try again in a moment."); return false; }
+  return true;
+}
+
+/* ---------- actions ---------- */
+const SLOTS = 14;
+function slotOf(iid){ const st = live.stations[iid]; return st && st.slot ? st.slot : null; }
+function stn(iid){ const n = slotOf(iid); return n ? "Stn "+n : ""; }
+function whoInSlot(n){ for(const [iid, st] of Object.entries(live.stations||{})) if(st && st.slot===n && instructor(iid)) return iid; return null; }
+function noteOf(n){ return n && live.notes ? (live.notes[n]||"") : ""; }
+function noteChip(n){ const t = noteOf(n); return t ? `<button class="notechip" data-act="note" data-n="${n}" title="${esc(t)}"><b>Note:</b> ${esc(t)}</button>` : ""; }
+function openNote(n){
+  const iid = whoInSlot(n);
+  openModal(`<div class="row"><h2>Note · Station ${n}${iid?` · ${esc(iname(iid))}`:""}${isBlocked(n)?" · Blocked":""}</h2><button class="btn small x" data-act="close">Close</button></div>
+    <textarea class="txt" id="noteTxt" maxlength="500" placeholder="e.g. Brian leaves at 12 PM · Switching to Joint after lunch">${esc(noteOf(n))}</textarea>
+    <div class="row"><button class="btn primary" data-act="notesave" data-n="${n}">Save note</button>${noteOf(n)?`<button class="btn danger" data-act="notedel" data-n="${n}">Delete note</button>`:""}<button class="btn" data-act="close">Cancel</button>
+    <span class="why" style="margin-left:auto">Stays with station ${n} in ${esc(className(cls))}.</span></div>`);
+  const t=$("noteTxt"); if(t){ t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+}
+function saveNote(n, text){
+  if(!guard()) return;
+  live.notes = Object.assign({}, live.notes);
+  text = (text||"").trim();
+  if(text) live.notes[n] = text; else delete live.notes[n];
+  closeModal(); renderAll(); saveLive();
+}
+async function copyLayout(to, withNotes){
+  if(!guard()) return;
+  setSave("Copying…");
+  try{
+    const td = await retry(()=>db.doc(P.live(to)).get());
+    const t = td.exists ? clone(td.data()) : {};
+    const tst = {};
+    for(const [k,v] of Object.entries(t.stations||{})){ const c = canon(k); if(!tst[c]) tst[c] = v; }
+    let kept = 0;
+    const ids = new Set([...Object.keys(tst), ...Object.keys(live.stations||{})]);
+    for(const iid of ids){
+      const src = live.stations[iid] || {};
+      const dst = tst[iid] || {skillId:null, studentId:null, startedAt:null, onBreak:false};
+      dst.slot = src.slot || null;
+      if(dst.studentId){ if(dst.skillId !== (src.skillId||null)) kept++; }   // never change a test in progress
+      else dst.skillId = src.skillId || null;
+      tst[iid] = dst;
+    }
+    const out = {stations: tst, blocked: clone(live.blocked||[]), notes: withNotes ? clone(live.notes||{}) : (t.notes||{})};
+    await retry(()=>db.doc(P.live(to)).set(out));
+    // warn about skills the other lab doesn't test
+    const tc = await retry(()=>db.doc(P.cfg(to)).get());
+    const tcfg = Object.assign(clone(DEFAULT_CONFIG), tc.exists? clone(tc.data()) : {});
+    const tActive = new Set([...tcfg.core.map(k=>k.id), ...tcfg.chosen]);
+    const off = [...new Set(Object.values(live.stations).map(st=>st && st.skillId).filter(k=>k && !tActive.has(k)))].map(k=>skill(k)?skill(k).short:k);
+    let msg = `Copied the floor layout to ${className(to)}.`;
+    if(kept) msg += ` ${kept} station${kept>1?"s":""} mid-test there kept their current skill.`;
+    if(off.length) msg += ` ${className(to)} doesn't test ${off.join(", ")}; change those stations there.`;
+    toast(msg);
+    setSave("All saved");
+  }catch(e){ handleWriteError(e); }
+}
+function isBlocked(n){ return (live.blocked||[]).includes(n); }
+function setBlocked(n, on){
+  if(!guard()) return;
+  if(on && whoInSlot(n)){ toast("Move the instructor off station "+n+" before blocking it."); return; }
+  const b = new Set(live.blocked||[]); on? b.add(n) : b.delete(n);
+  live.blocked = [...b].sort((a,c)=>a-c);
+  renderAll(); saveLive();
+}
+function placeInstructor(iid, n){
+  if(!guard()) return;
+  if(n && isBlocked(n)){ toast("Station "+n+" is blocked. Unblock it first."); ui.pick=null; renderAll(); return; }
+  const st = ensureStation(iid);
+  const old = st.slot || null;
+  if(n){ const other = whoInSlot(n); if(other && other!==iid){ ensureStation(other).slot = old; } }
+  st.slot = n || null;
+  ui.pick = null;
+  renderAll(); saveLive();
+}
+function ensureStation(iid){ if(!live.stations[iid]) live.stations[iid] = {skillId:null, studentId:null, startedAt:null, onBreak:false}; return live.stations[iid]; }
+function sendStudent(iid, sid, override){
+  if(!guard()) return;
+  const st = ensureStation(iid);
+  if(st.studentId){ toast(iname(iid)+" is already testing someone."); return; }
+  if(st.onBreak){ toast(iname(iid)+" is marked not here."); return; }
+  buildIndex();
+  const e = eligibility(sid, st.skillId, iid);
+  if(!e.ok && !(override && e.overridable)){ toast(e.reason || "Not eligible right now.", {bad:true}); return; }
+  st.override = e.ok ? null : e.reason;
+  const s = student(sid);
+  if(s && s.away){ s.away = false; saveCfg(); }
+  if(isPaused()){ const c = clone(clockState()); c.pauses = (c.pauses||[]).concat([{s:c.pausedAt, e:new Date().toISOString()}]).slice(-50); c.pausedAt = null; live.clock = c; toast("Clocks resumed."); }
+  st.studentId = sid; st.startedAt = new Date().toISOString(); st.sendId = uid("s");
+  renderAll(); saveLive();
+  const k = skill(st.skillId);
+  toast(`Send ${sname(s)} to ${slotOf(iid)? "Station "+slotOf(iid)+" · " : ""}${iname(iid)} · ${k?k.short:""}`);
+}
+async function recordResult(iid, result, extra){
+  if(!guard()) return;
+  const st = live.stations[iid];
+  if(!st || !st.studentId) return;
+  const a = Object.assign({id: uid("a"), studentId: st.studentId, skillId: st.skillId, instructorId: iid,
+             instructorName: iname(iid), result, at: new Date().toISOString(), startedAt: st.startedAt || null, override: st.override || null, assistantId: st.assistantId || null, sendId: st.sendId || null}, extra||{});
+  attempts.push(a);
+  st.lastDur = st.startedAt ? activeMs(st.startedAt, Date.parse(a.at)) : null;
+  st.lastPair = a.assistantId ? {main: a.studentId, asst: a.assistantId, skillId: a.skillId} : null;
+  st.studentId = null; st.startedAt = null; st.override = null; st.assistantId = null; st.sendId = null;
+  renderAll();
+  saveAttempt(a).catch(()=>{});
+  saveLive();
+  buildIndex();
+  const r = rec(a.studentId, a.skillId);
+  const s = student(a.studentId), k = skill(a.skillId);
+  let msg = `${result==="P"?"PASS":"FAIL"}: ${sname(s)} — ${k?k.short:"skill"}`;
+  if(result==="F"){
+    if(r.locked) msg += ` · 3rd fail, skill locked`;
+    else msg += ` · attempt ${r.n} of ${MAX_ATTEMPTS}`;
+  } else {
+    const sum = studentSummary(s);
+    if(sum.status==="complete") msg += ` · all skills passed`;
+  }
+  toast(msg, {bad: result==="F" && r.locked, undo: ()=>undoAttempt(a, iid)});
+}
+function undoAttempt(a, iid){
+  if(!guard()) return;
+  attempts = attempts.filter(x=>x.id!==a.id);
+  const st = live.stations[iid];
+  if(st && !st.studentId && stationOf(a.studentId)===null){ st.studentId = a.studentId; st.startedAt = a.startedAt; st.skillId = a.skillId; st.override = a.override || null; st.assistantId = (a.assistantId && !stationOf(a.assistantId) && !assistingAt(a.assistantId)) ? a.assistantId : null; saveLive(); }
+  renderAll(); deleteAttempt(a.id).catch(()=>{});
+  toast("Result undone. The student is back at the station.");
+}
+function cancelTest(iid){
+  if(!guard()) return;
+  const st = live.stations[iid]; if(!st) return;
+  st.studentId=null; st.startedAt=null; st.override=null; st.assistantId=null; st.sendId=null; renderAll(); saveLive();
+}
+function setStationSkill(iid, kid){
+  if(!guard()) return;
+  const st = ensureStation(iid);
+  if(st.studentId){ toast("Finish the current test before changing this station's skill."); renderAll(); return; }
+  st.skillId = kid || null; st.lastPair = null; renderAll(); saveLive();
+}
+function setBreak(iid, on){ if(!guard()) return; const st=ensureStation(iid); st.onBreak=!!on; renderAll(); saveLive(); }
+
+/* ---------- rendering: testing floor ---------- */
+function renderDemand(){
+  const el = $("demand");
+  const sk = activeSkills();
+  if(!activeStudents().length){ el.innerHTML = `<span class="why">Add students and instructors in Setup to start.</span>`; return; }
+  el.innerHTML = sk.map(k=>{
+    const d = skillDemand(k);
+    const remaining = d.first + d.ready + d.waiting + d.testing;
+    const need = (d.first + d.ready) > 0 && d.stations===0;
+    const parts = [];
+    if(d.first) parts.push(`<span class="num">${d.first}</span> <span class="k">1st</span>`);
+    if(d.ready) parts.push(`<span class="num">${d.ready}</span> <span class="k">retest</span>`);
+    if(d.waiting) parts.push(`<span class="num">${d.waiting}</span> <span class="k">waiting</span>`);
+    if(d.testing) parts.push(`<span class="num">${d.testing}</span> <span class="k">in</span>`);
+    if(!remaining) parts.push(`<span class="k">done</span>`);
+    const st = need ? `<span class="k" style="color:var(--warn);font-weight:600">no station</span>` : (d.stations? `<span class="k">${d.stations} stn</span>`:"");
+    return `<span class="dchip ${need?"need":""} ${!remaining?"done":""}" title="${esc(k.name)}"><b>${esc(k.short)}</b>${parts.join(" ")} ${st}</span>`;
+  }).join("");
+}
+function elapsed(iso){
+  if(!iso) return "";
+  const m = Math.floor(activeMs(iso)/60000);
+  return m<1? "just now" : m+" min";
+}
+function stationState(ins){
+  const st = live.stations[ins.id] || {};
+  const k = st.skillId ? skill(st.skillId) : null;
+  if(st.studentId) return {cls:"busy", line: sname(student(st.studentId))};
+  if(st.onBreak) return {cls:"away", line:"Not here"};
+  if(!k) return {cls:"", line:"No skill set"};
+  const n = suggestions(ins.id).ok.length;
+  return {cls: n? "has":"", line: n? `Open · ${n} eligible` : "Open · no one eligible"};
+}
+function fmCard(ins, mini){
+  const st = live.stations[ins.id] || {};
+  const k = st.skillId ? skill(st.skillId) : null;
+  const x = stationState(ins);
+  let title = `<b>${esc(ins.name)}${k?` · ${esc(k.short)}`:""}</b>`;
+  if(!mini){
+    const sk = activeSkills();
+    const opts = `<option value="">Assign a skill…</option>` + sk.map(x=>`<option value="${x.id}" ${x.id===st.skillId?"selected":""}>${esc(x.short)}</option>`).join("")
+      + (k && !sk.find(x=>x.id===k.id) ? `<option value="${k.id}" selected>${esc(k.short)} (not active)</option>`:"");
+    title = `<span class="tline"><b>${esc(ins.name)}</b><select class="fskill" data-act="skill" data-iid="${ins.id}" draggable="false" aria-label="Skill for ${esc(ins.name)}" ${st.studentId?"disabled title=\"Finish the current test first\"":""}>${opts}</select></span>`;
+  }
+  let line = `<span class="s">${esc(x.line)}</span>`, acts = "";
+  if(!mini && st.studentId){
+    const n = rec(st.studentId, st.skillId).n + 1;
+    line = `<span class="stu" title="${n===1?"1st attempt":`Retest · attempt ${n} of ${MAX_ATTEMPTS}`}">${esc(sname(student(st.studentId)))}${n>1?` <small style="color:var(--warn)">R${n}</small>`:""}</span>
+      <span class="s">${n===1?"1st attempt":`Retest · attempt ${n} of ${MAX_ATTEMPTS}`}${st.override?" · rules skipped":""}</span>${assistHtml(ins.id, true)}${subHtml(ins.id, true)}`;
+    acts = `${timerHtml(st.startedAt)}<button class="btn pass" data-act="pass" data-iid="${ins.id}">Pass</button><button class="btn fail" data-act="fail" data-iid="${ins.id}">Fail</button>`;
+  } else if(!mini && k && !st.onBreak){
+    const ok = suggestions(ins.id).ok;
+    if(ok.length){
+      const keep = ui.floorPick[ins.id];
+      const pair = needsAssist(k) ? swapPair(ins.id) : null;
+      const sel = ok.some(c=>c.s.id===keep) ? keep : (pair ? pair.main : ok[0].s.id);
+      const opts = ok.map((c,i)=>`<option value="${c.s.id}" ${c.s.id===sel?"selected":""}>${esc(sname(c.s))}${pair&&c.s.id===pair.main?" (was assistant)":i===0?" (waited longest)":""}${c.e.retest?` · retest`:""}</option>`).join("");
+      line = `<span class="s nextline">Next: <select class="fsel fmain" id="fsel-${ins.id}" data-act="floorsel" data-iid="${ins.id}" draggable="false" aria-label="Student to send to ${esc(ins.name)}">${opts}</select></span>`;
+      if(needsAssist(k)){
+        const c = assistantCandidates(ins.id, sel);
+        const keepA = ui.asstPick[ins.id];
+        const aSel = c.some(r=>r.s.id===keepA) ? keepA : (pair && sel===pair.main && c.some(r=>r.s.id===pair.asst) ? pair.asst : (c[0] && c[0].s.id));
+        line += c.length ? `<span class="s nextline">Asst: <select class="fsel fasst" data-act="asstsel" data-iid="${ins.id}" draggable="false" aria-label="Assistant EMT for ${esc(ins.name)}">
+            <option value="">No assistant</option>${c.map(r=>`<option value="${r.s.id}" ${r.s.id===aSel?"selected":""}>${esc(sname(r.s))}${pair&&r.s.id===pair.asst?" (just tested)":!r.x.left?" (done)":!r.needs?" (passed)":""}</option>`).join("")}</select><button class="btn small ghost xbtn" data-act="flip" data-iid="${ins.id}" title="Swap: assistant tests, tester assists" aria-label="Swap tester and assistant">⇄</button></span>`
+          : `<span class="s">Asst: no one free</span>`;
+      }
+      acts = `${lastDurHtml(st)}<button class="btn small primary" data-act="fsend" data-iid="${ins.id}">Send</button>`;
+    }
+  }
+  const n = mini ? null : slotOf(ins.id);
+  const note = n ? noteChip(n) : "";
+  if(n && !note) acts += `<button class="btn small ghost blk" data-act="note" data-n="${n}" title="Add a note for station ${n}">+ Note</button>`;
+  return `<div class="fm-card ${x.cls} ${ui.pick===ins.id?"picked":""}" draggable="true" data-drag="${ins.id}" title="Drag to a station, or click then click a station"><div class="info">${title}${line}${note}</div>${acts?`<div class="acts">${acts}</div>`:""}</div>`;
+}
+/* Seen from the front of the room: 13 14 on top, 1 2 at the bottom nearest the instructor. */
+function durText(ms){
+  const t = Math.max(0, Math.floor(ms/1000)), h = Math.floor(t/3600), m = Math.floor(t%3600/60), sec = t%60;
+  return (h? h+":"+String(m).padStart(2,"0") : m) + ":" + String(sec).padStart(2,"0");
+}
+function timerHtml(startedAt){ return startedAt ? `<span class="timer num" data-timer="${esc(startedAt)}" title="Time since Send">${durText(activeMs(startedAt))}</span>` : ""; }
+function lastDurHtml(st){ return st && st.lastDur ? `<span class="lastdur num" title="How long the last test at this station took">Last ${durText(st.lastDur)}</span>` : ""; }
+setInterval(()=>{ for(const el of document.querySelectorAll("[data-timer]")) el.textContent = durText(activeMs(el.dataset.timer)); }, 1000);
+setInterval(()=>{ if(ui.tab==="give" && db && !pointerDown) renderGive(); }, 30000);
+function clockText(){ return new Date().toLocaleTimeString(undefined, {hour:"numeric", minute:"2-digit", second:"2-digit"}); }
+setInterval(()=>{ const c = document.getElementById("floorClock"); if(c) c.textContent = clockText(); }, 1000);
+function slotRows(){ const rows=[]; for(let r=0;r<7;r++) rows.push([13-2*r, 14-2*r]); return rows; }
+function renderMap(){
+  const el = $("floormap");
+  if(!cfg.instructors.length){ $("floorHead").innerHTML = `<h2>Testing floor</h2>`; el.innerHTML = `<div class="empty">No instructors yet.<br><button class="btn primary" data-goto="setup">Go to Setup</button></div>`; return; }
+  const act = activeStudents();
+  const testing = act.filter(s=>stationOf(s.id)).length;
+  const waiting = act.filter(s=>{ const x=studentSummary(s); return x.status==="waiting"; }).length;
+  const away = act.filter(s=>s.away && !stationOf(s.id)).length;
+  $("floorHead").innerHTML = `<h2>Testing floor · ${esc(className(cls))}</h2>
+    <span class="why"><b class="num" style="color:var(--accent)">${testing}</b> testing · <b class="num">${waiting}</b> waiting${away?` · <b class="num">${away}</b> not here`:""}</span>
+    <span style="margin-left:auto;display:flex;gap:6px">${orphanSubs().length?`<button class="btn small primary" data-act="review" data-sub="${orphanSubs()[0].id}">${orphanSubs().length} sheet(s) to review</button>`:""}<button class="btn small" data-act="codes">Station codes</button>${pauseBtn()}${classes.filter(c=>c.id!==cls).map(c=>`<button class="btn small" data-act="copylayout" data-to="${c.id}">Copy layout to ${esc(c.name)}</button>`).join("")}<span class="btn small clockbox" id="floorClock" role="timer" aria-label="Current time">${clockText()}</span></span>`;
+  const cells = slotRows().map(row=>row.map(n=>{
+    const iid = whoInSlot(n), ins = iid && instructor(iid);
+    const note = noteChip(n);
+    const addNote = note ? "" : `<button class="btn small ghost blk" data-act="note" data-n="${n}" title="Add a note for station ${n}">+ Note</button>`;
+    if(isBlocked(n)) return `<div class="slot blocked" data-slot="${n}" data-blocked="1"><span class="no">${n}</span>
+        <div class="slotinfo"><span><span class="bl">Blocked</span></span>${note}</div>
+        <div class="slotbtns">${addNote}<button class="btn small blk" data-act="unblock" data-n="${n}">Unblock</button></div></div>`;
+    if(ins) return `<div class="slot filled" data-slot="${n}"><span class="no">${n}</span>${fmCard(ins)}</div>`;
+    return `<div class="slot ${ui.pick?"pickable":""}" data-slot="${n}"><span class="no">${n}</span>
+        <div class="slotinfo">${note}</div>
+        <div class="slotbtns">${addNote}<button class="btn small ghost blk" data-act="block" data-n="${n}" title="Block out station ${n}">Block</button></div></div>`;
+  }).join("")).join("");
+  const unplaced = cfg.instructors.filter(i=>!slotOf(i.id) || whoInSlot(slotOf(i.id))!==i.id);
+  el.innerHTML = `<div class="fm-grid">${cells}</div>
+    <div class="front">Front of room</div>
+    <div class="tray" data-slot="0">${unplaced.length? unplaced.map(i=>fmCard(i,true)).join("") : "Drag an instructor here to take them off the floor."}</div>
+    <div class="why">Drag instructors onto stations, or click one and then a station. Hover a station to add a note or block it out.</div>`;
+}
+function renderStations(){
+  const el = $("stations");
+  if(!cfg.instructors.length){
+    el.innerHTML = `<div class="empty">No instructors yet.<br><button class="btn primary" data-goto="setup">Go to Setup</button></div>`;
+    return;
+  }
+  const sk = activeSkills();
+  const behind = behindSet();
+  const ordered = cfg.instructors.slice().sort((a,b)=>(slotOf(a.id)||99)-(slotOf(b.id)||99) || a.name.localeCompare(b.name));
+  el.innerHTML = ordered.map(ins=>{
+    const st = live.stations[ins.id] || {};
+    const k = st.skillId ? skill(st.skillId) : null;
+    const opts = `<option value="">Assign a skill…</option>` + sk.map(s=>`<option value="${s.id}" ${s.id===st.skillId?"selected":""}>${esc(s.name)}</option>`).join("")
+      + (k && !sk.find(s=>s.id===k.id) ? `<option value="${k.id}" selected>${esc(k.name)} (not active)</option>`:"");
+    const slotOpts = `<option value="">Stn –</option>` + Array.from({length:SLOTS},(_,i)=>i+1).map(n=>{ const o=whoInSlot(n); return `<option value="${n}" ${st.slot===n?"selected":""} ${isBlocked(n)?"disabled":""}>Stn ${n}${isBlocked(n)?" (blocked)":o&&o!==ins.id?` (${esc(iname(o))})`:""}</option>`; }).join("");
+    const stNote = st.slot && noteOf(st.slot) ? `<div class="notebar"><b>Note</b> ${esc(noteOf(st.slot))}<button class="btn small ghost" style="margin-left:auto" data-act="note" data-n="${st.slot}">Edit</button></div>` : "";
+    const head = stNote + `<div class="st-head" id="card-${ins.id}"><span class="stnbadge ${st.slot?"":"none"}">${st.slot||"–"}</span><h3>${esc(ins.name)}</h3>
+        <select data-act="slot" data-iid="${ins.id}" aria-label="Station number for ${esc(ins.name)}" style="margin-left:0;max-width:150px">${slotOpts}</select>
+        <label class="brk"><input type="checkbox" data-act="break" data-iid="${ins.id}" ${st.onBreak?"checked":""} ${st.studentId?"disabled":""}> Not here</label>
+        <select data-act="skill" data-iid="${ins.id}" aria-label="Skill for ${esc(ins.name)}" ${st.studentId?"disabled":""}>${opts}</select></div>`;
+    if(st.studentId){
+      const s = student(st.studentId);
+      const r = rec(st.studentId, st.skillId);
+      const n = r.n+1;
+      return `<div class="station busy">${head}
+        <div class="testing-now">
+          <div><div class="who">${esc(sname(s))}</div>
+          <div class="meta">${esc(k?k.name:"")} · ${n===1?"1st attempt":`<b style="color:var(--warn)">Retest · attempt ${n} of ${MAX_ATTEMPTS}</b>`} ${st.override?` · <b style="color:var(--warn)">Rules skipped</b>`:""}</div></div>
+          <div class="btns">${timerHtml(st.startedAt)}
+            <button class="btn pass" data-act="pass" data-iid="${ins.id}">Pass</button>
+            <button class="btn fail" data-act="fail" data-iid="${ins.id}">Fail</button>
+          </div>
+        </div>
+        ${subHtml(ins.id)}
+        <div class="row">${assistHtml(ins.id, false)}<button class="btn ghost small" data-act="cancel" data-iid="${ins.id}" style="margin-left:auto">Student left without testing</button></div>
+      </div>`;
+    }
+    if(st.onBreak) return `<div class="station break idle none">${head}<div class="why">Marked not here. Uncheck when they're back.</div></div>`;
+    if(!k) return `<div class="station idle none">${head}<div class="why">Choose the skill this instructor is testing.</div></div>`;
+    const {ok, blocked} = suggestions(ins.id);
+    let body;
+    if(ok.length){
+      const top = ok.slice(0,3).map(c=>`<div class="cand"><span class="nm">${esc(sname(c.s))}</span>
+          <span class="tag ${c.e.retest?"re":""}">${c.e.retest?`Retest #${c.e.attemptNo-1}`:"1st attempt"}</span>
+          <span class="tag ${behind.has(c.s.id)?"re":""}">${c.taken} test${c.taken===1?"":"s"} · ${esc(sinceText(c.last))}</span>
+          <button class="btn small primary" data-act="send" data-iid="${ins.id}" data-sid="${c.s.id}">Send</button></div>`).join("");
+      const rest = ok.length>3 ? `<div class="more"><select id="more-${ins.id}" aria-label="Other eligible students">${ok.slice(3).map(c=>`<option value="${c.s.id}">${esc(sname(c.s))} — ${c.e.retest?`retest #${c.e.attemptNo-1}`:"1st"}, ${c.taken} tests, ${esc(sinceText(c.last))}</option>`).join("")}</select>
+          <button class="btn small" data-act="sendmore" data-iid="${ins.id}">Send</button></div>` : "";
+      let asstPick = "";
+      if(needsAssist(k)){
+        const c = assistantCandidates(ins.id, ok[0].s.id);
+        const keepA = ui.asstPick[ins.id];
+        const aSel = c.some(r=>r.s.id===keepA) ? keepA : (c[0] && c[0].s.id);
+        const pair = swapPair(ins.id);
+        if(pair) asstPick += `<div class="cand" style="border-color:var(--accent);background:var(--accent-soft)"><span class="nm">⇄ ${esc(sname(student(pair.main)))}</span><span class="tag">tests</span><span class="nm" style="font-weight:500">${esc(sname(student(pair.asst)))}</span><span class="tag">assists</span>
+            <button class="btn small primary" data-act="swapsend" data-iid="${ins.id}">Swap &amp; send</button></div>`;
+        asstPick += c.length ? `<div class="more"><span class="lbl" style="flex:none">Assistant EMT</span><select class="tasst" data-act="asstsel" data-iid="${ins.id}" aria-label="Assistant EMT for ${esc(ins.name)}">
+            <option value="">No assistant</option>${c.map(r=>`<option value="${r.s.id}" ${r.s.id===aSel?"selected":""}>${esc(sname(r.s))}${!r.x.left?" (done)":""}</option>`).join("")}</select></div>
+            <div class="why">Goes with whichever student you send. Assisting doesn't cost them their place in line.</div>`
+          : `<div class="why">Assistant EMT: no one free right now.</div>`;
+      }
+      body = `<div class="next"><span class="lbl">Send next · ${ok.length} eligible</span>${top}${rest}${asstPick}</div>`;
+    } else {
+      const remaining = activeStudents().filter(s=>{ const r=rec(s.id,k.id); return !r.passed && !r.locked; });
+      if(!remaining.length) body = `<div class="why"><b style="color:var(--pass)">Everyone is done with ${esc(k.short)}.</b> Move ${esc(ins.name)} to a skill that still has students waiting.</div>`;
+      else {
+        const items = blocked.slice(0,6).map(b=>`<li>${esc(sname(b.s))}: ${esc(b.e.reason)}</li>`).join("");
+        body = `<div class="why"><b>No one can be sent here right now.</b><ul>${items}</ul>${blocked.length>6?`<div>…and ${blocked.length-6} more</div>`:""}</div>`;
+      }
+    }
+    const ov = blocked.filter(b=>b.e.overridable);
+    const skip = ov.length ? `<details class="skip" data-iid="${ins.id}" ${ui.ovOpen[ins.id]?"open":""}><summary>Skip the matching rules…</summary>
+        <div class="more"><select id="ov-${ins.id}" aria-label="Student to send outside the rules">${ov.map(b=>`<option value="${b.s.id}">${esc(sname(b.s))} — ${esc(b.e.reason)}</option>`).join("")}</select>
+        <button class="btn small" data-act="override" data-iid="${ins.id}">Send anyway</button></div>
+        <div class="why">For late arrivals, early departures or a missing instructor. The attempt is flagged in the records.</div></details>` : "";
+    return `<div class="station idle ${ok.length?"has":"none"}">${head}${body}${skip}</div>`;
+  }).join("");
+}
+
+/* ---------- rendering: student grid ---------- */
+function renderStats(){
+  const act = activeStudents();
+  let complete=0, failed=0, testing=0;
+  for(const s of act){ const x=studentSummary(s); if(x.status==="complete") complete++; else if(x.locked>0) failed++; if(x.status==="testing") testing++; }
+  const live_ = attempts.filter(a=>student(a.studentId) && !student(a.studentId).withdrawn);
+  const passN = live_.filter(a=>a.result==="P").length;
+  const firsts = []; for(const [k,list] of idx){ const s=student(list[0].studentId); if(s && !s.withdrawn) firsts.push(list[0]); }
+  const firstPass = firsts.filter(a=>a.result==="P").length;
+  const pct = (a,b)=> b? Math.round(100*a/b)+"%" : "—";
+  $("stats").innerHTML = `
+    <div class="stat"><span class="v num">${act.length}</span><span class="l">students</span></div>
+    <div class="stat acc"><span class="v num">${testing}</span><span class="l">testing now</span></div>
+    <div class="stat pass"><span class="v num">${complete}</span><span class="l">all skills passed</span></div>
+    <div class="stat fail"><span class="v num">${failed}</span><span class="l">failed a skill 3×</span></div>
+    <div class="stat" style="color:var(--warn)"><span class="v num">${behindSet().size}</span><span class="l">falling behind</span></div>
+    <div class="stat"><span class="v num">${pct(firstPass, firsts.length)}</span><span class="l">1st-attempt pass</span></div>
+    <div class="stat"><span class="v num">${pct(passN, live_.length)}</span><span class="l">all attempts pass (${live_.length})</span></div>`;
+}
+function cellHtml(s, k){
+  const r = rec(s.id, k.id);
+  const at = stationOf(s.id);
+  if(at && live.stations[at].skillId===k.id) return `<span class="cell c-now" title="Testing now with ${esc(iname(at))}">●</span>`;
+  if(r.passed){ const n = Math.min(3, r.n); return `<span class="cell c-p${n}" title="Passed on attempt ${r.n}">P${r.n}</span>`; }
+  if(r.locked) return `<span class="cell c-f3" title="Failed 3 times · skill locked">F3</span>`;
+  if(r.fails){
+    const waiting = firstAttemptsOwed(k.id).some(o=>o.id!==s.id);
+    return `<span class="cell c-f${Math.min(2, r.fails)} ${waiting?"w":""}" title="${r.fails} fail${r.fails>1?"s":""} · ${waiting?"waiting for first attempts to finish":"ready to retest"} · not with ${esc([...r.instr].map(i=>iname(i)).join(", "))}">F${r.fails}</span>`;
+  }
+  return `<span class="cell c-none">·</span>`;
+}
+function statusChip(s, x){
+  if(x.status==="withdrawn") return `<span class="chip wd">Withdrawn</span>`;
+  if(x.status==="away") return `<span class="chip wd">Not here</span>`;
+  if(x.status==="assisting"){ const st=live.stations[x.asst]; const k=skill(st.skillId); return `<span class="chip now" style="border-style:dashed">Assisting · ${stn(x.asst)?esc(stn(x.asst))+" · ":""}${esc(k?k.short:"")}</span>`; }
+  if(x.status==="testing"){ const st=live.stations[x.at]; const k=skill(st.skillId); return `<span class="chip now">${stn(x.at)?esc(stn(x.at))+" · ":""}${esc(k?k.short:"")} · ${esc(iname(x.at))}</span>`; }
+  if(x.status==="complete") return `<span class="chip ok">Complete</span>`;
+  if(x.status==="failed") return `<span class="chip bad">Did not pass</span>`;
+  if(x.locked) return `<span class="chip bad">Waiting · failed ${x.locked}</span>`;
+  return `<span class="chip">Waiting</span>`;
+}
+function renderGrid(){
+  const wrap = $("gridWrap");
+  if(!cfg.students.length){ wrap.innerHTML = `<div class="empty">No students on the roster yet.<br><button class="btn primary" data-goto="setup">Add students in Setup</button></div>`; return; }
+  const sk = activeSkills();
+  const q = ui.search.trim().toLowerCase();
+  const behind = behindSet();
+  let rows = cfg.students.map(s=>({s, x:studentSummary(s), t:testsTaken(s.id), last:lastActivity(s.id)}))
+    .filter(r=> !q || sname(r.s).toLowerCase().includes(q));
+  const order = {testing:0, assisting:0, waiting:1, away:2, failed:3, complete:4, withdrawn:5};
+  rows.sort((a,b)=>{
+    if(a.s.withdrawn!==b.s.withdrawn) return a.s.withdrawn?1:-1;
+    if(ui.sort==="left") return b.x.left-a.x.left || sname(a.s).localeCompare(sname(b.s));
+    if(ui.sort==="fewest") return (a.x.left?0:1)-(b.x.left?0:1) || a.t-b.t || (a.last||"").localeCompare(b.last||"") || sname(a.s).localeCompare(sname(b.s));
+    if(ui.sort==="idle") return (a.x.left?0:1)-(b.x.left?0:1) || (a.x.at?1:0)-(b.x.at?1:0) || (a.last||"").localeCompare(b.last||"") || sname(a.s).localeCompare(sname(b.s));
+    if(ui.sort==="status") return order[a.x.status]-order[b.x.status] || sname(a.s).localeCompare(sname(b.s));
+    return sname(a.s).localeCompare(sname(b.s));
+  });
+  const warnRandom = cfg.chosen.length!==RANDOM_COUNT ? `<p class="warnline">Pick ${RANDOM_COUNT} random skills in Setup. ${cfg.chosen.length} chosen so far.</p>`:"";
+  wrap.innerHTML = warnRandom + `<table class="grid"><thead><tr><th title="Uncheck when a student isn't here">Here</th><th class="l">Student</th><th class="l">Status</th><th>Left</th><th title="Tests taken so far (all attempts)">Tests</th><th class="l">Last test</th>${sk.map(k=>`<th title="${esc(k.name)}">${esc(k.short)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(({s,x,t,last})=>`<tr data-student="${s.id}" class="${s.withdrawn?"wd":""} ${s.away&&!x.at?"away":""}"><td><input type="checkbox" data-act="here" data-id="${s.id}" aria-label="${esc(sname(s))} is here" ${s.away?"":"checked"} ${s.withdrawn||x.at||x.asst?"disabled":""}></td><td class="l sname">${esc(sname(s))}${s.homeClass && s.homeClass!==cls?` <span class="chip" style="color:var(--warn);border-color:var(--warn)" title="Visiting from ${esc(className(s.homeClass))}">from ${esc(className(s.homeClass)||"other lab")}</span>`:""}</td><td class="l">${statusChip(s,x)}</td><td class="num">${x.left}</td><td>${behind.has(s.id)?`<span class="cell c-wait" title="2 or more tests behind the class">${t}</span>`:`<span class="num">${t}</span>`}</td><td class="l why" style="white-space:nowrap">${x.at?"testing now":x.left?esc(sinceText(last)):"—"}</td>${sk.map(k=>`<td>${cellHtml(s,k)}</td>`).join("")}</tr>`).join("")}</tbody></table>`
+    + (rows.length? "" : `<p class="why">No students match “${esc(ui.search)}”.</p>`);
+}
+
+/* ---------- student detail modal ---------- */
+function openStudent(sid){
+  const s = student(sid); if(!s) return;
+  const x = studentSummary(s);
+  const blocks = activeSkills().map(k=>{
+    const r = rec(sid, k.id);
+    const state = r.passed? `<span class="chip ok">Passed</span>` : r.locked? `<span class="chip bad">Failed 3×, locked</span>` : r.n? `<span class="chip" style="color:var(--warn);border-color:var(--warn)">Needs retest · attempt ${r.n+1} of ${MAX_ATTEMPTS}</span>` : `<span class="chip">Not tested</span>`;
+    const atts = r.list.map((a,i)=>`<div class="att"><span class="r ${a.result}">${a.result}</span><span>Attempt ${i+1} · ${esc(iname(a.instructorId, a.instructorName))}${a.manual?` · <span style="color:var(--warn)">manual entry</span>`:a.override?` · <span style="color:var(--warn)">rules skipped (${esc(a.override)})</span>`:""}${a.assistantId?` · assistant ${esc(sname(student(a.assistantId)))}`:""}${a.edited?` · <span style="color:var(--warn)">changed from ${a.edited.from==="P"?"pass":"fail"}</span>`:""}</span><span class="t">${fmtTime(a.at)}</span>
+       ${a.sheet?`<button class="btn small" data-act="printatt" data-aid="${a.id}">Sheet</button>`:""}<button class="btn small" data-act="flipres" data-aid="${a.id}">Change to ${a.result==="P"?"Fail":"Pass"}</button>
+       <button class="btn small ghost" data-act="delatt" data-aid="${a.id}">Delete</button></div>`).join("");
+    const atStn = stationOf(sid), testingHere = atStn && live.stations[atStn].skillId===k.id;
+    const addBtn = (!r.passed && !r.locked && !testingHere) ? `<button class="btn small" data-act="manualfor" data-sid="${sid}" data-kid="${k.id}" style="margin-top:4px">+ Add result</button>` : "";
+    return `<div class="skillblock"><h3>${esc(k.name)} ${state}</h3>${atts}${addBtn}</div>`;
+  }).join("");
+  openModal(`<div class="row"><h2>${esc(sname(s))}</h2><button class="btn small x" data-act="close">Close</button></div>
+    <div class="row">${statusChip(s,x)} <span class="why">${x.passed} of ${x.total} passed · ${x.left} left</span>${s.homeClass && s.homeClass!==cls?` <span class="chip" style="color:var(--warn);border-color:var(--warn)">Visiting from ${esc(className(s.homeClass)||"another lab")}</span>`:""}</div>
+    ${classes.length>1?`<div class="row move">${classes.filter(c=>c.id!==cls).map(c=>`<button class="btn small" data-act="move" data-sid="${s.id}" data-to="${c.id}" ${x.at?"disabled title=\"Finish the current test first\"":""}>${c.id===s.homeClass?"Send back to ":"Move to "}${esc(c.name)}</button>`).join("")}<span class="why">Results move with the student.</span></div>`:""}
+    ${blocks}
+    <p class="why">Use <b>Change to Pass/Fail</b> to fix a grade, <b>+ Add result</b> to enter one by hand (doesn't reset their waiting clock), and <b>Delete</b> only to remove a result that shouldn't exist.</p>`);
+  $("modal").dataset.student = sid;
+}
+function fmtTime(iso){ if(!iso) return ""; const d=new Date(iso); return d.toLocaleDateString(undefined,{weekday:"short", month:"short", day:"numeric"}) + " " + d.toLocaleTimeString(undefined,{hour:"numeric", minute:"2-digit"}); }
+function openModal(html){ $("modal").innerHTML = html; $("modalBg").hidden=false; const b=$("modal").querySelector("button,input"); if(b) b.focus(); }
+function closeModal(){ $("modalBg").hidden=true; $("modal").innerHTML=""; delete $("modal").dataset.student; delete $("modal").dataset.confirm; }
+function confirmBox(title, text, okLabel, onOk){
+  delete $("modal").dataset.student;
+  openModal(`<h2>${esc(title)}</h2><p style="margin:0">${text}</p><div class="row"><button class="btn danger" id="cfOk">${esc(okLabel)}</button><button class="btn" data-act="close">Cancel</button></div>`);
+  $("cfOk").onclick = ()=>{ closeModal(); onOk(); };
+}
+
+/* ---------- moving a student between labs ---------- */
+let moving = false;
+async function moveStudent(sid, to){
+  if(!guard() || moving) return;
+  const s = student(sid); if(!s) return;
+  if(stationOf(sid)){ toast("Finish the current test before moving this student."); return; }
+  moving = true; setSave("Moving…");
+  const from = cls, mine = attempts.filter(a=>a.studentId===sid).map(clone);
+  try{
+    // 1) add to the other lab first, so nothing is lost if the connection drops partway
+    const td = await retry(()=>db.doc(P.cfg(to)).get());
+    const tcfg = Object.assign(clone(DEFAULT_CONFIG), td.exists ? clone(td.data()) : {});
+    delete tcfg.instructors;
+    const moved = clone(s); moved.away = false;
+    if(!moved.homeClass) moved.homeClass = from;
+    if(moved.homeClass === to) delete moved.homeClass;
+    tcfg.students = (tcfg.students||[]).filter(x=>x.id!==sid).concat([moved]);
+    await retry(()=>db.doc(P.cfg(to)).set(tcfg));
+    for(const a of mine) await retry(()=>db.collection(P.att(to)).doc(a.id).set(a));
+    // 2) then remove from this lab
+    if(cls===from){
+      cfg.students = cfg.students.filter(x=>x.id!==sid);
+      attempts = attempts.filter(a=>a.studentId!==sid);
+      closeModal(); renderAll();
+    }
+    let body;
+    if(cls===from){ body = clone(cfg); }
+    else { const fd = await retry(()=>db.doc(P.cfg(from)).get()); body = clone(fd.data()); body.students = (body.students||[]).filter(x=>x.id!==sid); }
+    delete body.instructors;
+    await retry(()=>db.doc(P.cfg(from)).set(body));
+    for(const a of mine) await retry(()=>db.collection(P.att(from)).doc(a.id).delete());
+    // warn if the other lab tests different random skills
+    const tActive = new Set([...(tcfg.core||[]).map(k=>k.id), ...(tcfg.chosen||[])]);
+    const missing = activeSkills().filter(k=>!tActive.has(k.id)).map(k=>k.short);
+    toast(`Moved ${sname(s)} to ${className(to)}.` + (missing.length? ` ${className(to)} doesn't test ${missing.join(", ")}, so those results are kept but hidden there.`:""));
+    setSave("All saved");
+  }catch(e){ handleWriteError(e); }
+  finally{ moving = false; }
+}
+
+/* ---------- results ---------- */
+
+/* ---------- give results: tick each try once the student has been told ---------- */
+function untoldCount(kid){
+  let n = 0; for(const st of activeStudents()) for(const a of rec(st.id,kid).list) if(!a.told) n++; return n;
+}
+function renderGive(){
+  const el = $("give");
+  const sk = activeSkills(), act = activeStudents().slice().sort((a,b)=>sname(a).localeCompare(sname(b)));
+  if(!act.length){ el.innerHTML = `<div class="empty">No students on the roster yet.</div>`; return; }
+  if(!ui.giveSkill || !sk.find(k=>k.id===ui.giveSkill)){ const first = sk.find(k=>untoldCount(k.id)>0) || sk[0]; ui.giveSkill = first && first.id; }
+  const kid = ui.giveSkill, k = skill(kid);
+  const chips = sk.map(x=>{ const u = untoldCount(x.id);
+    return `<button class="gchip ${x.id===kid?"on":""}" data-act="giveskill" data-kid="${x.id}">${esc(x.short)}${u?` <span class="gbadge num">${u}</span>`:""}</button>`; }).join("");
+  // how far each round has got: round r is "complete" when every active student has passed/locked before r, or has an r-th attempt
+  const rounds = [1,2,3].map(r=>{
+    let need=0, have=0, testing=0;
+    for(const st of act){ const re = rec(st.id,kid);
+      const needsThis = r===1 || (re.n >= r-1 && re.list.slice(0,r-1).every(a=>a.result==="F"));
+      if(!needsThis) continue; need++;
+      if(re.n >= r) have++; else { const at=stationOf(st.id); if(at && live.stations[at].skillId===kid) testing++; } }
+    return {r, need, have, testing};
+  });
+  const roundTxt = rounds.filter(x=>x.need).map(x=>{
+    const done = x.have===x.need;
+    return `<span class="chip ${done?"ok":""}">${["1st","2nd","3rd"][x.r-1]} try: <b class="num">${x.have}/${x.need}</b>${done?" · all done":x.testing?` · ${x.testing} testing now`:""}</span>`;
+  }).join(" ");
+  const cell = (st, a, i) => {
+    if(!a) return `<td class="gcell empty">—</td>`;
+    const pass = a.result==="P";
+    const waitMin = Math.floor(activeMs(a.at)/60000);
+    const waitTxt = waitMin<1? "just now" : minsText(waitMin);
+    const sub = a.told ? `told ${new Date(a.toldAt||a.at).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})}`
+                       : `<span class="gwait ${waitMin>=30?"long":""}" title="Waiting for this result since ${esc(fmtTime(a.at))}">waiting ${waitTxt}</span>`;
+    return `<td class="gcell ${a.told?"told":""}"><label><span class="gres ${pass?"p":"f"}">${pass?"PASS":"FAIL"}</span>
+      <input type="checkbox" data-act="told" data-aid="${a.id}" ${a.told?"checked":""} aria-label="Told ${esc(sname(st))} their ${["1st","2nd","3rd"][i]} try result"></label>
+      <div class="gmeta"><span class="gins">${esc(iname(a.instructorId, a.instructorName))}</span> · ${sub}${a.sheet?` · <a href="#" data-act="printatt" data-aid="${a.id}">sheet</a>`:""}</div></td>`;
+  };
+  const rows = act.map(st=>{
+    const re = rec(st.id,kid), at = stationOf(st.id), here = at && live.stations[at].skillId===kid;
+    const pending = re.list.filter(a=>!a.told).length;
+    const x = studentSummary(st), last = lastActivity(st.id);
+    const status = x.at ? `testing now · ${esc(stn(x.at)||iname(x.at))}` : x.asst ? `assisting · ${esc(stn(x.asst)||iname(x.asst))}` : x.left ? (last ? `last test ${esc(sinceText(last))}` : "no tests yet") : "finished all skills";
+    return `<tr class="${pending?"pend":""}"><td class="sname">${esc(sname(st))}${here?` <span class="chip now">testing now</span>`:""}${st.away?` <span class="chip wd">not here</span>`:""}
+      <div class="gmeta" style="text-align:left">${status}</div></td>
+      ${[0,1,2].map(i=>cell(st, re.list[i], i)).join("")}</tr>`;
+  }).join("");
+  const colCount = i => act.filter(st=>{ const a=rec(st.id,kid).list[i]; return a && !a.told; }).length;
+  el.innerHTML = `<div class="card gsticky">
+      <div class="gchips">${chips}</div>
+      <div class="row"><h2>${esc(k?k.name:"")}</h2><span class="row" style="margin-left:auto;gap:6px">${roundTxt}</span></div></div>
+    <div class="card">
+      <p class="hint">Tell each student their result and tick the box. The number on a skill is how many results haven't been given yet. Each result shows who tested it and how long the student has been waiting to hear it (amber after 30 min).</p>
+      <div class="gwrap"><table class="plain gtable"><thead><tr><th>Student</th>
+        ${[0,1,2].map(i=>`<th class="gh">${["1st try","2nd try","3rd try"][i]}${colCount(i)?` <button class="btn small ghost" data-act="toldall" data-i="${i}" title="Mark every ${["1st","2nd","3rd"][i]}-try result for this skill as given">Mark all given</button>`:""}</th>`).join("")}
+      </tr></thead><tbody>${rows}</tbody></table></div>
+    </div>`;
+  fitGiveHeader();
+}
+function fitGiveHeader(){ const b = document.querySelector("#give .gsticky"); if(b) $("give").style.setProperty("--gstick", b.offsetHeight + "px"); }
+window.addEventListener("resize", ()=>{ if(ui.tab==="give") fitGiveHeader(); });
+/* Manual result: record a pass/fail without the station flow. Counts toward progress and the 3-try limit; doesn't reset the waiting clock. */
+function flipResult(aid){
+  if(!guard()) return;
+  const a = attempts.find(x=>x.id===aid); if(!a) return;
+  buildIndex();
+  const r = rec(a.studentId, a.skillId), idx = r.list.findIndex(x=>x.id===aid), to = a.result==="P" ? "F" : "P";
+  if(to==="P" && idx < r.list.length-1){ toast("There are later attempts on this skill. Delete those first, then change this one to Pass.", {bad:true}); return; }
+  const sid = a.studentId, k = skill(a.skillId);
+  const willLock = to==="F" && r.list.filter(x=>x.result==="F").length+1 >= MAX_ATTEMPTS;
+  confirmBox(`Change to ${to==="P"?"Pass":"Fail"}?`, `${esc(sname(student(sid)))} · ${esc(k?k.name:"")} · attempt ${idx+1} with ${esc(iname(a.instructorId, a.instructorName))}.<br>${to==="P"?"The skill will count as passed.":willLock?"<b>This makes 3 fails: the skill will be locked.</b>":"The student will need a retest on this skill."}`, `Change to ${to==="P"?"Pass":"Fail"}`, ()=>{
+    if(!guard()) return;
+    const cur = attempts.find(x=>x.id===aid); if(!cur) return;
+    cur.edited = {from: cur.edited ? cur.edited.from : cur.result, at: new Date().toISOString()};
+    if(cur.edited.from === to) delete cur.edited;
+    cur.result = to; delete cur.told; delete cur.toldAt;   // a changed grade needs to be given again
+    renderAll(); saveAttempt(clone(cur)).catch(()=>{});
+    openStudent(sid);
+    toast(`Changed to ${to==="P"?"PASS":"FAIL"}: ${sname(student(sid))} · ${k?k.short:""}`);
+  });
+  $("cfOk").className = "btn primary";
+}
+function openManual(preset){
+  if(!preset) ui.manualReturn = null;
+  delete $("modal").dataset.student;   // keep a background refresh from swapping this form for the student card
+  const sts = activeStudents().slice().sort((a,b)=>sname(a).localeCompare(sname(b)));
+  if(!sts.length){ toast("Add students in Setup first."); return; }
+  openModal(`<div class="row"><h2>Manual result</h2><button class="btn small x" data-act="close">Close</button></div>
+    <p class="why" style="margin:0">Records a pass or fail directly. It counts toward the student's progress and 3-try limit, is flagged as manual, and doesn't reset their waiting clock.</p>
+    <div class="two" style="gap:12px">
+      <div class="field"><label for="mStu">Student</label><select class="txt" id="mStu">${sts.map(s=>`<option value="${s.id}">${esc(sname(s))}</option>`).join("")}</select></div>
+      <div class="field"><label for="mSkill">Skill</label><select class="txt" id="mSkill">${activeSkills().map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join("")}</select></div>
+      <div class="field"><label for="mIns">Instructor</label><select class="txt" id="mIns">${cfg.instructors.map(i=>`<option value="${i.id}">${esc(i.name)}</option>`).join("")}</select></div>
+      <div class="field"><label>Result</label><div class="row"><label class="row" style="gap:4px"><input type="radio" name="mRes" value="P" checked> Pass</label><label class="row" style="gap:4px"><input type="radio" name="mRes" value="F"> Fail</label></div></div>
+    </div>
+    <div id="mInfo" class="why"></div>
+    <div class="row"><button class="btn primary" data-act="manualsave">Save result</button><button class="btn" data-act="close">Cancel</button></div>`);
+  const upd = ()=>{ const sid=$("mStu").value, kid=$("mSkill").value, iid=$("mIns").value; buildIndex(); const r=rec(sid,kid);
+    let msg = r.passed? `<b style="color:var(--fail)">Already passed this skill.</b>` : r.locked? `<b style="color:var(--fail)">Already failed 3 times (locked).</b>` : `This will be attempt ${r.n+1} of ${MAX_ATTEMPTS}.`;
+    if(!r.passed && !r.locked && r.instr.has(iid)) msg += ` <span style="color:var(--warn)">Note: already tested this skill with ${esc(iname(iid))}.</span>`;
+    const at = stationOf(sid); if(at && live.stations[at].skillId===kid) msg = `<b style="color:var(--fail)">Testing this skill at a station now. Use Pass/Fail there.</b>`;
+    $("mInfo").innerHTML = msg; };
+  for(const id of ["mStu","mSkill","mIns"]) $(id).addEventListener("change", upd);
+  if(preset){ $("mStu").value = preset.sid; $("mSkill").value = preset.kid; }
+  const ins0 = cfg.instructors.find(i=>live.stations[i.id] && live.stations[i.id].skillId===$("mSkill").value); if(ins0) $("mIns").value = ins0.id;
+  upd();
+}
+function saveManual(){
+  if(!guard()) return;
+  const sid=$("mStu").value, kid=$("mSkill").value, iid=$("mIns").value, res=(document.querySelector('input[name="mRes"]:checked')||{}).value;
+  buildIndex(); const r = rec(sid,kid), at = stationOf(sid);
+  if(!sid || !kid || !iid || !res) return;
+  if(r.passed || r.locked){ toast(r.passed? "Already passed this skill." : "Already failed 3 times.", {bad:true}); return; }
+  if(at && live.stations[at].skillId===kid){ toast("That student is testing this skill at a station now.", {bad:true}); return; }
+  const a = {id: uid("a"), studentId: sid, skillId: kid, instructorId: iid, instructorName: iname(iid), result: res, at: new Date().toISOString(), startedAt: null, manual: true, override: "Manual entry"};
+  attempts.push(a); closeModal(); renderAll(); saveAttempt(a).catch(()=>{});
+  if(ui.manualReturn){ const back = ui.manualReturn; ui.manualReturn = null; openStudent(back); }
+  buildIndex(); const r2 = rec(sid,kid);
+  toast(`Manual ${res==="P"?"PASS":"FAIL"}: ${sname(student(sid))} · ${skill(kid).short}${res==="F" && r2.locked?" · 3rd fail, skill locked":""}`, {undo: ()=>{ attempts = attempts.filter(x=>x.id!==a.id); renderAll(); deleteAttempt(a.id).catch(()=>{}); toast("Manual result removed."); }});
+}
+async function setTold(ids, on){
+  if(!guard()) return;
+  const now = new Date().toISOString();
+  const changed = [];
+  for(const id of ids){ const a = attempts.find(x=>x.id===id); if(!a || !!a.told===on) continue;
+    if(on){ a.told = true; a.toldAt = now; } else { delete a.told; delete a.toldAt; }
+    changed.push(a); }
+  renderAll();
+  for(const a of changed) saveAttempt(clone(a)).catch(()=>{});
+}
+
+/* ---------- results charts (hand-built SVG; tables below are the accessible table view) ---------- */
+function tipAttr(t){ return `data-tip="${esc(t)}" tabindex="0"`; }
+function vizHero(act, sk){
+  let need = act.length*sk.length, done = 0, complete = 0, retests = 0, firstN = 0, firstP = 0;
+  for(const st of act){ const x = studentSummary(st); done += x.passed; if(x.status==="complete") complete++;
+    for(const k of sk){ const r = rec(st.id,k.id); retests += Math.max(0, r.n-1); if(r.n){ firstN++; if(r.list[0].result==="P") firstP++; } } }
+  const pc = need ? Math.round(100*done/need) : 0;
+  const R = 42, C = 2*Math.PI*R, len = C*pc/100;
+  const ring = `<svg viewBox="0 0 100 100" width="104" height="104" role="img" aria-label="${pc}% of all required skills passed">
+    <circle cx="50" cy="50" r="${R}" fill="none" stroke="var(--vgrid)" stroke-width="10"/>
+    ${pc? `<circle cx="50" cy="50" r="${R}" fill="none" stroke="var(--v1)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${len} ${C}" transform="rotate(-90 50 50)"/>`:""}
+    <text x="50" y="50" text-anchor="middle" dominant-baseline="central" style="font-family:var(--display);font-size:22px;font-weight:800;fill:var(--ink)">${pc}%</text></svg>`;
+  return `<div class="viz-hero viz">
+    <div class="tile ring-tile">${ring}<div><div class="lab">Class progress</div><div class="sub"><b class="num" style="color:var(--ink)">${done}</b> of <span class="num">${need}</span> skill passes earned</div></div></div>
+    <div class="tile"><span class="big num" style="color:var(--pass)">${complete}<span style="font-size:18px;color:var(--muted)">/${act.length}</span></span><span class="lab">students finished every skill</span></div>
+    <div class="tile"><span class="big num">${firstN? Math.round(100*firstP/firstN)+"%" : "—"}</span><span class="lab">pass on the first try</span><span class="sub">${firstP} of ${firstN} first attempts</span></div>
+    <div class="tile"><span class="big num">${retests}</span><span class="lab">retests so far</span></div>
+  </div>`;
+}
+function vizSkillBars(act, sk){
+  const cats = [
+    {key:"p1", label:"Passed 1st try", col:"var(--v1)"},
+    {key:"pr", label:"Passed on retest", col:"var(--v2)"},
+    {key:"rt", label:"Retest pending", col:"var(--v3)"},
+    {key:"nt", label:"Not tested yet", col:"var(--vpend)"},
+    {key:"lk", label:"Failed 3×", col:"var(--vcrit)"}
+  ];
+  const n = act.length || 1;
+  const rows = sk.map(k=>{
+    const c = {p1:0, pr:0, rt:0, nt:0, lk:0};
+    for(const st of act){ const r = rec(st.id,k.id);
+      if(r.passed) (r.list[0].result==="P"? c.p1++ : c.pr++); else if(r.locked) c.lk++; else if(r.n) c.rt++; else c.nt++; }
+    return {k, c};
+  });
+  const W = 480, L = 80, Rt = 48, bh = 18, gap = 12, top = 6;
+  const H = top + rows.length*(bh+gap);
+  const plotW = W - L - Rt;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Skill progress for each skill, stacked by outcome">`;
+  rows.forEach((r,i)=>{
+    const y = top + i*(bh+gap);
+    svg += `<text x="${L-8}" y="${y+bh/2}" text-anchor="end" dominant-baseline="central" class="tx-strong">${esc(r.k.short)}</text>`;
+    svg += `<clipPath id="clip-${i}"><rect x="${L}" y="${y}" width="${plotW}" height="${bh}" rx="4"/></clipPath><g clip-path="url(#clip-${i})">`;
+    let x = L;
+    for(const cat of cats){
+      const v = r.c[cat.key]; if(!v) continue;
+      const w = plotW * v / n;
+      svg += `<rect x="${x}" y="${y}" width="${Math.max(0, w-2)}" height="${bh}" fill="${cat.col}" ${tipAttr(`${r.k.name}\n${cat.label}: ${v} student${v===1?"":"s"} (${Math.round(100*v/n)}%)`)}/>`;
+      x += w;
+    }
+    svg += `</g>`;
+    const done = r.c.p1 + r.c.pr;
+    svg += `<text x="${W-Rt+8}" y="${y+bh/2}" dominant-baseline="central" class="num">${done}/${act.length}</text>`;
+  });
+  svg += `</svg>`;
+  return `<div class="card viz"><h2>Where every skill stands</h2>
+    <p class="hint">Each bar is one skill across the whole class. The number on the right is how many students have passed it. Hover a segment for counts.</p>
+    <div class="vlegend">${cats.map(c=>`<span><i style="background:${c.col}"></i>${c.label}</span>`).join("")}</div>${svg}</div>`;
+}
+function vizTimeline(act){
+  const ids = new Set(act.map(s=>s.id));
+  const ev = attempts.filter(a=>ids.has(a.studentId) && a.at).sort((a,b)=>a.at.localeCompare(b.at));
+  if(ev.length < 2) return `<div class="card viz"><h2>Testing pace</h2><p class="hint">The chart appears once a few results are in.</p></div>`;
+  const W = 480, H = 250, L = 34, R = 12, T = 18, B = 30;
+  const pw = W-L-R, ph = H-T-B;
+  let att=0, pas=0; const pts = ev.map(a=>{ att++; if(a.result==="P") pas++; return {a, att, pas}; });
+  const max = att; const step = Math.max(1, Math.ceil(max/4/5)*5);
+  const X = i => L + (ev.length===1? 0 : pw*i/(ev.length-1)), Y = v => T + ph - ph*v/max;
+  const line = key => pts.map((p,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(p[key]).toFixed(1)}`).join("");
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative tests and passes over time" id="paceSvg">`;
+  for(let v=0; v<=max; v+=step){ svg += `<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--vgrid)"/><text x="${L-6}" y="${Y(v)}" text-anchor="end" dominant-baseline="central" class="num">${v}</text>`; }
+  // day boundaries
+  let lastDay = "";
+  pts.forEach((p,i)=>{ const d = new Date(p.a.at).toDateString(); if(d!==lastDay){ lastDay = d;
+    const lab = new Date(p.a.at).toLocaleDateString(undefined,{weekday:"short", month:"numeric", day:"numeric"});
+    if(i) svg += `<line x1="${X(i)}" x2="${X(i)}" y1="${T}" y2="${T+ph}" stroke="var(--line)" stroke-dasharray="3 4"/>`;
+    svg += `<text x="${X(i)+(i?4:0)}" y="${H-10}" class="num">${lab}</text>`; } });
+  svg += `<path d="${line("att")} L${X(pts.length-1)},${Y(0)} L${X(0)},${Y(0)} Z" fill="var(--v1)" opacity=".08"/>`;
+  svg += `<path d="${line("att")}" fill="none" stroke="var(--v1)" stroke-width="2" stroke-linejoin="round"/>`;
+  svg += `<path d="${line("pas")}" fill="none" stroke="var(--v2)" stroke-width="2" stroke-linejoin="round"/>`;
+  const e = pts[pts.length-1];
+  svg += `<circle cx="${X(pts.length-1)}" cy="${Y(e.att)}" r="4" fill="var(--v1)" stroke="var(--card)" stroke-width="2"/><circle cx="${X(pts.length-1)}" cy="${Y(e.pas)}" r="4" fill="var(--v2)" stroke="var(--card)" stroke-width="2"/>`;
+  svg += `<text x="${X(pts.length-1)-6}" y="${Y(e.att)-10}" text-anchor="end" class="tx-strong num">${e.att} tests</text><text x="${X(pts.length-1)-2}" y="${Y(e.pas)+20}" text-anchor="end" class="tx-strong num">${e.pas} passes</text>`;
+  // hover layer: crosshair
+  svg += `<line id="paceX" x1="0" x2="0" y1="${T}" y2="${T+ph}" stroke="var(--muted)" stroke-width="1" visibility="hidden"/>`;
+  svg += `<rect x="${L}" y="${T}" width="${pw}" height="${ph}" fill="transparent" id="paceHit"/>`;
+  svg += `</svg>`;
+  vizTimeline.data = {pts, X, L, pw, n: pts.length};
+  return `<div class="card viz"><h2>Testing pace</h2>
+    <p class="hint">Running total of tests given and passes earned, in the order they happened. Dashed lines mark a new testing day.</p>
+    <div class="vlegend"><span><i style="background:var(--v1)"></i>Tests given</span><span><i style="background:var(--v2)"></i>Passes</span></div>${svg}</div>`;
+}
+function vizInstructors(ins, MIN_N){
+  const rows = ins.filter(r=>r.n);
+  if(!rows.length) return "";
+  const diffs = rows.map(r=>({r, d: 100*(r.passN - r.expected)/r.n, small: r.n < MIN_N}));
+  const lim = Math.max(15, Math.ceil(Math.max(...diffs.map(x=>Math.abs(x.d)))/5)*5);
+  const W = 1000, L = 130, R = 70, bh = 18, gap = 12, T = 22;
+  const H = T + diffs.length*(bh+gap) + 4;
+  const pw = W-L-R, mid = L + pw/2, sc = v => pw/2 * v/lim;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Each instructor's first-attempt pass rate compared with the skill average">`;
+  svg += `<text x="${L}" y="10" class="num">−${lim} pts</text><text x="${mid}" y="10" text-anchor="middle">skill average</text><text x="${W-R}" y="10" text-anchor="end" class="num">+${lim} pts</text>`;
+  svg += `<line x1="${mid}" x2="${mid}" y1="${T-4}" y2="${H}" stroke="var(--muted)" stroke-width="1"/>`;
+  diffs.forEach((x,i)=>{
+    const y = T + i*(bh+gap), w = Math.abs(sc(x.d)), col = x.small? "var(--vpend)" : (x.d>=0? "var(--v1)" : "var(--vneg)");
+    const bx = x.d>=0? mid : mid - w;
+    svg += `<text x="${L-8}" y="${y+bh/2}" text-anchor="end" dominant-baseline="central" class="tx-strong">${esc(x.r.i.name)}</text>`;
+    svg += `<rect x="${bx}" y="${y}" width="${Math.max(2,w)}" height="${bh}" rx="4" fill="${col}" ${tipAttr(`${x.r.i.name}\nPass rate ${Math.round(100*x.r.passN/x.r.n)}% vs expected ${Math.round(100*x.r.expected/x.r.n)}%\n${x.r.n} first attempts${x.small?" (too few to judge)":""}`)}/>`;
+    const v = Math.round(x.d), lab = x.small? "few tests" : (v>0?"+":v<0?"−":"") + Math.abs(v);
+    svg += `<text x="${x.d>=0? mid+w+6 : mid-w-6}" y="${y+bh/2}" ${x.d>=0?"":'text-anchor="end"'} dominant-baseline="central" class="num">${lab}</text>`;
+  });
+  svg += `</svg>`;
+  return `<div class="card viz"><h2>Instructors vs. skill average · ${ui.statScope==="all"?"All-time":ui.statScope==="both"?"Both labs":"This lab"}</h2>
+    <p class="hint">Right of center: passing more students than expected for the skills they tested. Left: fewer. Grey bars have under ${MIN_N} tests. Details in the tables below.</p>
+    <div class="vlegend"><span><i style="background:var(--v1)"></i>Above average</span><span><i style="background:var(--vneg)"></i>Below average</span><span><i style="background:var(--vpend)"></i>Too few to judge</span></div>${svg}</div>`;
+}
+/* First-attempt stats per instructor for the open lab's current semester. */
+/* First attempt per student per active skill, from any lab's saved data. */
+function firstsFromData(lcfg, latts){
+  const c = Object.assign(clone(DEFAULT_CONFIG), lcfg||{});
+  const active = new Set([...(c.core||[]).map(k=>k.id), ...(c.chosen||[])]);
+  const ok = new Set((c.students||[]).filter(s=>!s.withdrawn).map(s=>s.id));
+  const first = {};
+  for(const a of (latts||[])){
+    if(!ok.has(a.studentId) || !active.has(a.skillId)) continue;
+    const key = a.studentId+"|"+a.skillId;
+    if(!first[key] || (a.at||"") < (first[key].at||"")) first[key] = a;
+  }
+  return Object.values(first);
+}
+function computeInsStats(thisLabOnly){
+  const act = activeStudents().map(s=>s.id);
+  let firsts = [];
+  for(const sid of act) for(const k of activeSkills()){ const r=rec(sid,k.id); if(r.n) firsts.push(r.list[0]); }
+  if(!thisLabOnly && (ui.statScope==="both" || ui.statScope==="all") && ui.otherFor===cls) for(const o of Object.values(ui.other||{})) firsts = firsts.concat(o.firsts);
+  return statsFromFirsts(firsts);
+}
+/* Other labs' current semester, read on demand for the "Both labs" / "All-time" views. */
+async function loadOtherLabs(){
+  if(!db || ui.otherLoading) return;
+  ui.otherLoading = true;
+  const out = {};
+  try{
+    for(const c of classes){ if(c.id===cls) continue;
+      const d = await retry(()=>db.doc(P.cfg(c.id)).get());
+      const q = await retry(()=>db.collection(P.att(c.id)).get());
+      out[c.id] = {firsts: firstsFromData(d.exists? d.data() : {}, q.docs.map(x=>Object.assign({id:x.id}, x.data())))};
+    }
+    ui.other = out; ui.otherFor = cls; ui.otherAt = Date.now();
+  }catch(e){ toast("Couldn't load the other lab's results. Showing this lab only.", {bad:true}); }
+  ui.otherLoading = false;
+  if(ui.tab==="results") renderResults();
+}
+function statsFromFirsts(firsts){
+  const skillRate = {};
+  for(const a of firsts){ const x = skillRate[a.skillId] || (skillRate[a.skillId]={n:0,p:0}); x.n++; if(a.result==="P") x.p++; }
+  const ins = cfg.instructors.map(i=>{
+    const mine = firsts.filter(a=>canon(a.instructorId)===i.id);
+    const per = {}; let passN=0, expected=0;
+    for(const a of mine){
+      const x = per[a.skillId] || (per[a.skillId]={n:0,p:0}); x.n++;
+      if(a.result==="P"){ x.p++; passN++; }
+      expected += skillRate[a.skillId].p / skillRate[a.skillId].n;
+    }
+    return {i, n:mine.length, passN, expected, per};
+  });
+  return {firsts, skillRate, ins};
+}
+/* Instructor history kept across semesters (doc app/history, shared by all labs). */
+let history = null, historySub = null;
+function subscribeHistory(){
+  if(historySub || !db) return;
+  historySub = db.doc("app/history").onSnapshot(snap=>{ history = snap.exists ? clone(snap.data()) : {ins:{}, skill:{}, sems:[]}; if(ui.tab==="results") renderAll(); }, ()=>{});
+}
+function withHistory(skillRate, ins){
+  const h = history || {ins:{}, skill:{}};
+  const sr = clone(skillRate);
+  for(const [kid,x] of Object.entries(h.skill||{})){ const t = sr[kid] || (sr[kid]={n:0,p:0}); t.n += x.n; t.p += x.p; }
+  const out = ins.map(r=>{
+    const hh = (h.ins||{})[r.i.id]; if(!hh) return r;
+    const per = clone(r.per);
+    for(const [kid,x] of Object.entries(hh.per||{})){ const t = per[kid] || (per[kid]={n:0,p:0}); t.n += x.n; t.p += x.p; }
+    return {i:r.i, n:r.n+hh.n, passN:r.passN+hh.passN, expected:r.expected+hh.expected, per};
+  });
+  return {skillRate: sr, ins: out};
+}
+async function archiveInstructorStats(){
+  const {ins, skillRate, firsts} = computeInsStats(true);   // only the lab being cleared
+
+  if(!firsts.length) return true;
+  const ref = db.doc("app/history");
+  const d = await retry(()=>ref.get());
+  const h = d.exists ? clone(d.data()) : {ins:{}, skill:{}, sems:[]};
+  h.ins = h.ins || {}; h.skill = h.skill || {}; h.sems = h.sems || [];
+  for(const r of ins){ if(!r.n) continue;
+    const t = h.ins[r.i.id] || (h.ins[r.i.id] = {name:r.i.name, n:0, passN:0, expected:0, per:{}});
+    t.name = r.i.name; t.n += r.n; t.passN += r.passN; t.expected += r.expected;
+    for(const [kid,x] of Object.entries(r.per)){ const q = t.per[kid] || (t.per[kid]={n:0,p:0}); q.n += x.n; q.p += x.p; } }
+  for(const [kid,x] of Object.entries(skillRate)){ const q = h.skill[kid] || (h.skill[kid]={n:0,p:0}); q.n += x.n; q.p += x.p; }
+  h.sems.push({at:new Date().toISOString(), lab:className(cls), label:cfg.semester||"", firstAttempts:firsts.length, students:activeStudents().length});
+  await retry(()=>ref.set(h));
+  return true;
+}
+function renderResults(){
+  const el = $("results");
+  const act = new Set(activeStudents().map(s=>s.id));
+  const pct = (a,b)=> b? Math.round(100*a/b) : null;
+  const bar = p => p==null? "—" : `<span class="num">${p}%</span><span class="bar"><i style="width:${p}%"></i></span>`;
+  const skillRows = activeSkills().map(k=>{
+    let passed=0, locked=0, firstN=0, firstP=0, all=0, allP=0, retests=0;
+    for(const sid of act){
+      const r = rec(sid,k.id);
+      if(r.passed) passed++; if(r.locked) locked++;
+      if(r.n){ firstN++; if(r.list[0].result==="P") firstP++; }
+      all += r.n; allP += r.list.filter(a=>a.result==="P").length; retests += Math.max(0, r.n-1);
+    }
+    return `<tr><td>${esc(k.name)}</td><td class="n num">${passed}/${act.size}</td><td>${bar(pct(firstP,firstN))}</td><td>${bar(pct(allP,all))}</td><td class="n num">${retests}</td><td class="n num">${locked}</td></tr>`;
+  }).join("");
+  /* Instructor comparison, adjusted for skill difficulty. First attempts only, so retest mix doesn't skew it.
+     Expected = for each first attempt an instructor graded, that skill's overall first-attempt pass rate, summed. */
+  const MIN_N = 10;
+  const scope = ui.statScope || "sem";
+  const wide = scope==="both" || scope==="all";
+  if(wide && classes.length>1 && (ui.otherFor!==cls || !ui.other || Date.now()-(ui.otherAt||0) > 60000) && !ui.otherLoading) loadOtherLabs();
+  let {firsts, skillRate, ins} = computeInsStats();
+  const scopeAll = scope==="all";
+  if(scopeAll) ({skillRate, ins} = withHistory(skillRate, ins));
+  const fmtDiff = d => { const v=Math.round(d); return v===0? "even" : (v>0? "+"+v : "−"+(-v)) + " pts"; };
+  const insRows = ins.map(r=>{
+    const small = r.n < MIN_N;
+    const rate = r.n? Math.round(100*r.passN/r.n) : null;
+    const exp = r.n? Math.round(100*r.expected/r.n) : null;
+    const diff = r.n? 100*(r.passN - r.expected)/r.n : 0;
+    const big = !small && Math.abs(diff) >= 10;
+    const diffCell = !r.n? "—" : small? `<span class="why">too few to judge</span>`
+      : `<span class="num" style="font-weight:600;color:${big?"var(--warn)":"var(--ink)"}">${fmtDiff(diff)}</span>${big?` <span class="why">${diff<0?"grading below":"grading above"} skill average</span>`:""}`;
+    const skills = Object.keys(r.per).map(id=>skill(id)?skill(id).short:id).join(", ");
+    return `<tr style="${small?"opacity:.6":""}"><td>${esc(r.i.name)}</td><td class="n num">${r.n}</td><td>${rate==null?"—":`<span class="num">${rate}%</span>`}</td><td>${exp==null?"—":`<span class="num">${exp}%</span>`}</td><td>${diffCell}</td><td>${esc(skills)||"—"}</td></tr>`;
+  }).join("");
+  const sk = activeSkills();
+  const gridRows = ins.filter(r=>r.n).map(r=>`<tr><td>${esc(r.i.name)}</td>${sk.map(k=>{ const x=r.per[k.id]; if(!x) return `<td class="why" style="text-align:center">—</td>`;
+      const rr=Math.round(100*x.p/x.n), avg=skillRate[k.id]? Math.round(100*skillRate[k.id].p/skillRate[k.id].n):null;
+      return `<td style="text-align:center;${x.n<MIN_N?"opacity:.55":""}" title="${x.p} of ${x.n} passed on first attempt · skill average ${avg}%"><span class="num">${rr}%</span> <span class="why num">(${x.n})</span></td>`; }).join("")}</tr>`).join("");
+  const avgRow = `<tr style="font-weight:600"><td>All instructors</td>${sk.map(k=>{ const x=skillRate[k.id]; return x? `<td style="text-align:center"><span class="num">${Math.round(100*x.p/x.n)}%</span> <span class="why num">(${x.n})</span></td>` : `<td class="why" style="text-align:center">—</td>`; }).join("")}</tr>`;
+  const shared = sk.filter(k=>ins.filter(r=>r.per[k.id]).length>=2).length;
+  const anyIns = ins.some(r=>r.n);
+  const pastSems = (history && history.sems || []).length;
+  const others = classes.filter(c=>c.id!==cls).map(c=>c.name).join(" + ");
+  const scopeBar = `<div class="row" style="gap:6px"><span class="why">Instructor stats:</span>
+    <button class="gchip ${scope==="sem"?"on":""}" data-act="scope" data-v="sem">This lab</button>
+    ${classes.length>1?`<button class="gchip ${scope==="both"?"on":""}" data-act="scope" data-v="both">Both labs</button>`:""}
+    <button class="gchip ${scopeAll?"on":""}" data-act="scope" data-v="all">All-time${pastSems?` <span class="why num" style="color:inherit">(${pastSems} past)</span>`:""}</button></div>`;
+  const loadingNote = wide && classes.length>1 && ui.otherFor!==cls ? ` <b>Loading ${esc(others)}…</b>` : "";
+
+  /* Top students: most skills passed on the first try, then fewest fails, then finished soonest. */
+  const tops = activeStudents().map(st=>{
+    let firstP=0, fails=0, tried=0, doneAt="";
+    const x = studentSummary(st);
+    for(const k of sk){ const r=rec(st.id,k.id); if(!r.n) continue; tried++; if(r.list[0].result==="P") firstP++; fails += r.fails;
+      if(r.passed){ const pa=r.list.find(a=>a.result==="P"); if(pa.at>doneAt) doneAt=pa.at; } }
+    const complete = x.status==="complete" || (x.left===0 && !x.locked);
+    return {st, firstP, fails, tried, complete, doneAt: complete? doneAt : "", left:x.left, locked:x.locked};
+  }).filter(r=>r.tried>0)
+    .sort((a,b)=> b.firstP-a.firstP || a.fails-b.fails || (b.complete?1:0)-(a.complete?1:0) || (a.doneAt||"~").localeCompare(b.doneAt||"~") || sname(a.st).localeCompare(sname(b.st)))
+    .slice(0,10);
+  const topRows = tops.map((r,i)=>`<tr><td class="num" style="font-weight:700">${i+1}</td><td><b>${esc(sname(r.st))}</b>${r.complete && r.fails===0?` <span class="chip ok">Perfect</span>`:""}</td>
+      <td class="num">${r.firstP} / ${sk.length}</td><td class="num">${r.fails}</td>
+      <td>${r.complete? `<span class="chip ok">Complete</span> <span class="why">${esc(fmtTime(r.doneAt))}</span>` : r.locked? `<span class="chip bad">Failed a skill 3×</span>` : `<span class="why">${r.left} left</span>`}</td></tr>`).join("");
+  const vizHtml = vizHero(activeStudents(), sk) + `<div class="viz-two">${vizSkillBars(activeStudents(), sk)}${vizTimeline(activeStudents())}</div>` + vizInstructors(ins, MIN_N);
+  el.innerHTML = vizHtml + `
+    <div class="card"><h2>By skill</h2>
+      <p class="hint">1st-attempt pass rate counts each student's first try only. Withdrawn students are left out.</p>
+      <div class="tablewrap"><table class="plain"><thead><tr><th>Skill</th><th class="n">Passed</th><th>1st-attempt pass</th><th>All attempts pass</th><th class="n">Retests</th><th class="n">Failed 3×</th></tr></thead><tbody>${skillRows}</tbody></table></div></div>
+    <div class="card"><h2>Top students</h2>
+      <p class="hint">Ranked by skills passed on the first try, then fewest fails, then who finished soonest. <b>Perfect</b> means every skill passed on the first attempt.</p>
+      <div class="tablewrap"><table class="plain"><thead><tr><th>#</th><th>Student</th><th>1st-try passes</th><th>Fails</th><th>Status</th></tr></thead><tbody>${topRows || `<tr><td colspan="5" class="why">No results yet.</td></tr>`}</tbody></table></div></div>
+    <div class="card">${scopeBar}<p class="hint" style="margin:0">${scopeAll? `Every past semester from all labs, plus this semester in ${esc(classes.map(c=>c.name).join(" and "))}.${pastSems?"":" No past semesters saved yet: history starts when you clear a semester."}` : scope==="both" ? `This semester, ${esc(classes.map(c=>c.name).join(" and "))} combined. Each instructor's results follow them across labs.` : `This semester, ${esc(className(cls))} only.`}${loadingNote}</p></div>
+    <div class="card"><h2>By instructor, adjusted for skill difficulty</h2>
+      <p class="hint">Compares each instructor with how students do on the same skills overall, so an instructor on an easy skill isn't credited for it. <b>Expected</b> is the pass rate you'd predict from the skills they tested. Uses first attempts only. Under ${MIN_N} tests is greyed out as too few to judge.</p>
+      <div class="tablewrap"><table class="plain"><thead><tr><th>Instructor</th><th class="n">1st attempts graded</th><th>Pass rate</th><th>Expected</th><th>Difference</th><th>Skills tested</th></tr></thead><tbody>${insRows || `<tr><td colspan="6" class="why">No instructors yet.</td></tr>`}</tbody></table></div>
+      ${shared===0 && firsts.length? `<p class="warnline">No skill has been tested by two or more instructors yet, so skill difficulty and grading can't be told apart. Rotating instructors across skills makes this comparison meaningful.</p>`:""}</div>
+    <div class="card"><h2>Instructor × skill</h2>
+      <p class="hint">First-attempt pass rate with the number of tests in brackets. Compare down a column: same skill, different instructors. Faded cells have under ${MIN_N} tests.</p>
+      <div class="tablewrap"><table class="plain"><thead><tr><th>Instructor</th>${sk.map(k=>`<th style="text-align:center" title="${esc(k.name)}">${esc(k.short)}</th>`).join("")}</tr></thead><tbody>${gridRows}${anyIns? avgRow : `<tr><td colspan="${sk.length+1}" class="why">No results yet.</td></tr>`}</tbody></table></div></div>
+    <div class="card"><h2>Export</h2>
+      <p class="hint">Copies a spreadsheet-ready table you can paste into Google Sheets or Excel. Export before you clear the semester.</p>
+      <div class="row"><button class="btn primary" data-act="copyRoster">Copy student summary</button><button class="btn" data-act="copyLog">Copy full attempt log</button></div></div>`;
+}
+function tsv(rows){ return rows.map(r=>r.map(c=>String(c==null?"":c).replace(/[\t\n]/g," ")).join("\t")).join("\n"); }
+function rosterTable(){
+  const sk = activeSkills();
+  const rows = [["Last","First","MI","Status",...sk.map(k=>k.name)]];
+  for(const s of cfg.students){
+    const x = studentSummary(s);
+    rows.push([s.last, s.first, s.mi||"", x.status, ...sk.map(k=>{ const r=rec(s.id,k.id); return r.passed? `Pass (attempt ${r.n})` : r.locked? "Fail (3 attempts)" : r.n? `Fail x${r.fails}, retest pending` : ""; })]);
+  }
+  return tsv(rows);
+}
+function logTable(){
+  const rows = [["Date/time","Student","Skill","Attempt","Result","Instructor","Note"]];
+  const sorted = attempts.slice().sort((a,b)=>(a.at||"").localeCompare(b.at||""));
+  const count = {};
+  for(const a of sorted){ const key=a.studentId+"|"+a.skillId; count[key]=(count[key]||0)+1;
+    const k=skill(a.skillId); rows.push([fmtTime(a.at), sname(student(a.studentId)), k?k.name:a.skillId, count[key], a.result==="P"?"Pass":"Fail", iname(a.instructorId, a.instructorName), a.override? "Rules skipped: "+a.override : ""]); }
+  return tsv(rows);
+}
+async function copyText(text, label){
+  try{ await navigator.clipboard.writeText(text); toast(label+" copied. Paste it into a spreadsheet."); }
+  catch(e){ openModal(`<div class="row"><h2>${esc(label)}</h2><button class="btn small x" data-act="close">Close</button></div><p class="why">Your browser blocked copying. Select all of the text below and copy it.</p><textarea class="txt" style="min-height:300px" readonly>${esc(text)}</textarea>`); }
+}
+
+/* ---------- setup ---------- */
+function renderSetup(){
+  const el = $("setup");
+  if(el.contains(document.activeElement) && document.activeElement.matches("input.txt,textarea.txt")) { setupDirty = true; return; }
+  if(pointerDown){ setupDirty = true; return; }   // never redraw mid-click: the click would land on a removed button
+  setupDirty = false;
+  const drafts = {};
+  for(const id of DRAFT_IDS){ const d=$(id); if(d) drafts[id]=d.value; }
+  const used = new Set(attempts.map(a=>a.skillId));
+  const poolHtml = cfg.pool.map(k=>{
+    const on = cfg.chosen.includes(k.id);
+    const dis = !on && cfg.chosen.length>=RANDOM_COUNT;
+    return `<div class="li"><input type="checkbox" id="pick-${k.id}" data-act="pick" data-kid="${k.id}" ${on?"checked":""} ${dis?"disabled":""} aria-label="Use ${esc(k.name)} this semester">
+      <input class="txt grow" data-edit="pool" data-kid="${k.id}" data-f="name" value="${esc(k.name)}" aria-label="Skill name">
+      <input class="txt short" data-edit="pool" data-kid="${k.id}" data-f="short" value="${esc(k.short)}" aria-label="Short label">
+      <label class="why" style="display:flex;gap:4px;align-items:center;white-space:nowrap" title="A second student goes along as assistant EMT (not tested)"><input type="checkbox" data-act="assist" data-kid="${k.id}" ${needsAssist(k)?"checked":""}> Assistant</label>
+      <button class="btn small ghost" data-act="rmpool" data-kid="${k.id}" ${on||used.has(k.id)?"disabled title=\"In use\"":""}>Remove</button></div>`;
+  }).join("");
+  const coreHtml = cfg.core.map(k=>`<div class="li">
+      <input class="txt grow" data-edit="core" data-kid="${k.id}" data-f="name" value="${esc(k.name)}" aria-label="Skill name">
+      <input class="txt short" data-edit="core" data-kid="${k.id}" data-f="short" value="${esc(k.short)}" aria-label="Short label">
+      <label class="why" style="display:flex;gap:4px;align-items:center;white-space:nowrap" title="A second student goes along as assistant EMT (not tested)"><input type="checkbox" data-act="assist" data-kid="${k.id}" ${needsAssist(k)?"checked":""}> Assistant</label></div>`).join("");
+  const insHtml = cfg.instructors.map(i=>`<div class="li"><input class="txt grow" data-edit="ins" data-id="${i.id}" value="${esc(i.name)}" aria-label="Instructor name">
+      <button class="btn small ghost" data-act="rmins" data-id="${i.id}">Remove</button></div>`).join("") || `<p class="why">No instructors yet.</p>`;
+  const stuHtml = cfg.students.slice().sort((a,b)=>sname(a).localeCompare(sname(b))).map(s=>`<div class="li"><span class="grow sname">${esc(sname(s))}</span>
+      <label class="why" style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-act="wd" data-id="${s.id}" ${s.withdrawn?"checked":""}> Withdrawn</label>
+      <button class="btn small ghost" data-act="rmstu" data-id="${s.id}">Remove</button></div>`).join("") || `<p class="why">No students yet.</p>`;
+  const clsHtml = classes.map(c=>`<div class="li"><input class="txt grow" data-edit="cls" data-id="${c.id}" value="${esc(c.name)}" aria-label="Class name">
+      ${c.id===cls?`<span class="chip now">Open now</span>`:`<button class="btn small" data-class="${c.id}">Open</button>`}
+      <button class="btn small ghost" data-act="rmclass" data-id="${c.id}" ${classes.length<2?"disabled":""}>Delete</button></div>`).join("");
+  el.innerHTML = `
+    <div class="card"><h2>Classes</h2>
+      <p class="hint">Each class has its own roster, stations and results. Everything on this page applies to <b>${esc(className(cls))}</b> only. A new class starts with this class's skills and instructors.</p>
+      <div class="list">${clsHtml}</div>
+      <div class="row"><input class="txt" id="newClass" placeholder="New class name" style="flex:1"><button class="btn" data-act="addclass">Add class</button></div></div>
+    <div class="card"><h2>Semester · ${esc(className(cls))}</h2>
+      <div class="field"><label for="semName">Name shown at the top</label><input class="txt" id="semName" data-edit="sem" placeholder="e.g. Fall 2026 · EMT 101" value="${esc(cfg.semester)}"></div></div>
+    <div class="two">
+      <div class="card"><h2>Required skills</h2><p class="hint">Every student tests all of these. The short label is the column heading on the testing screen. Check <b>Assistant</b> where a second student goes along as assistant EMT.</p><div class="list">${coreHtml}</div></div>
+      <div class="card"><h2>Random skills · pick ${RANDOM_COUNT}</h2>
+        <p class="hint">Check the ${RANDOM_COUNT} skills the instructors chose for this semester. Every student tests both.</p>
+        ${cfg.chosen.length!==RANDOM_COUNT?`<p class="warnline">${cfg.chosen.length} of ${RANDOM_COUNT} chosen.</p>`:""}
+        <div class="list">${poolHtml}</div>
+        <div class="row"><input class="txt" id="newPool" placeholder="Add a random skill" style="flex:1"><button class="btn" data-act="addpool">Add</button></div></div>
+    </div>
+    <div class="two">
+      <div class="card"><h2>Instructors <span class="why num">(${cfg.instructors.length})</span></h2>
+        <p class="hint">Shared by all labs: add someone once and they show up in every lab. Each lab sets its own stations and "Not here."</p>
+        <div class="list">${insHtml}</div>
+        <div class="row"><input class="txt" id="newIns" placeholder="Instructor name" style="flex:1"><button class="btn" data-act="addins">Add</button></div></div>
+      <div class="card"><h2>Students <span class="why num">(${cfg.students.length})</span></h2>
+        <p class="hint">Paste one student per line as <b>Last, First M</b>. A withdrawn student stays in the records but stops holding up retests.</p>
+        <textarea class="txt" id="newStu" placeholder="Garcia, Maria L&#10;Nguyen, Tommy&#10;Smith, Jordan A"></textarea>
+        <div class="row"><button class="btn primary" data-act="addstu">Add students</button></div>
+        <div class="list">${stuHtml}</div></div>
+    </div>
+    <div class="card"><h2>Instructor screens</h2>
+      <p class="hint">Instructors grade on their own device at <b>${esc(stationUrl())}</b> with a station code. No account needed. They only see the student you send them, and every sheet waits for your approval.</p>
+      <div class="row"><button class="btn primary" data-act="codes">Show station codes</button></div></div>
+    <div class="card"><h2>Import from the old tracker</h2>
+      <p class="hint">One-time move of students, results, instructors and history from the Claude-hosted tracker. Choose the export file Claude gave you.</p>
+      <div class="row"><input type="file" id="importFile" accept=".json,application/json"></div></div>
+    <div class="card danger-zone"><h2>Clear ${esc(className(cls))} for next semester</h2>
+      <p class="hint">Deletes every student, test result and station note in ${esc(className(cls))}. Instructor stats are saved to the all-time history first. Other classes aren't touched. Instructors, skills and the floor layout stay. This can't be undone, so copy your results from the Results tab first.</p>
+      <div class="row"><input class="txt" id="clearTxt" placeholder="Type CLEAR to confirm" style="max-width:240px" autocomplete="off"><button class="btn danger" data-act="clear">Clear semester data</button></div></div>`;
+  restoreDrafts(drafts);
+}
+let setupDirty = false;
+let pointerDown = false;
+const DRAFT_IDS = ["newIns","newStu","newPool","newClass","clearTxt"];
+function restoreDrafts(drafts){ for(const id of DRAFT_IDS){ const d=$(id); if(d && drafts[id]) d.value = drafts[id]; } }
+function flushSetup(){ if(setupDirty && ui.tab==="setup" && !pointerDown && !($("setup").contains(document.activeElement) && document.activeElement.matches("input.txt,textarea.txt"))) renderSetup(); }
+document.addEventListener("pointerdown", ()=>{ pointerDown = true; }, true);
+document.addEventListener("pointerup", ()=>{ pointerDown = false; setTimeout(flushSetup, 0); }, true);
+document.addEventListener("pointercancel", ()=>{ pointerDown = false; setTimeout(flushSetup, 0); }, true);
+function parseStudent(line){
+  line = line.trim().replace(/\s+/g," ");
+  if(!line) return null;
+  let last, rest;
+  if(line.includes(",")){ [last, rest] = [line.slice(0,line.indexOf(",")).trim(), line.slice(line.indexOf(",")+1).trim()]; }
+  else { const p=line.split(" "); last=p.pop(); rest=p.join(" "); }
+  let parts = rest.split(" ").filter(Boolean), mi="";
+  if(parts.length>1 && /^[A-Za-z]\.?$/.test(parts[parts.length-1])) mi = parts.pop().replace(".","").toUpperCase();
+  return {id: uid("s"), last, first: parts.join(" "), mi, withdrawn:false};
+}
+async function clearSemester(){
+  if(!guard()) return;
+  setSave("Saving instructor stats…");
+  try{ await archiveInstructorStats(); }
+  catch(e){ handleWriteError(e); toast("Couldn't save instructor stats, so nothing was cleared. Try again.", {bad:true}); return; }
+  const ids = attempts.map(a=>a.id);
+  const col = P.att(cls);
+  attempts = []; cfg.students = []; cfg.semester = "";
+  for(const st of Object.values(live.stations)){ st.studentId=null; st.startedAt=null; }
+  live.notes = {}; live.clock = null;
+  renderAll();
+  saveCfg(); saveLive();
+  setSave("Clearing…");
+  let failed = 0;
+  for(let i=0;i<ids.length;i+=8){
+    const batch = ids.slice(i,i+8);
+    const res = await Promise.allSettled(batch.map(id=>retry(()=>db.collection(col).doc(id).delete())));
+    failed += res.filter(r=>r.status==="rejected").length;
+  }
+  if(failed) toast(`${failed} results couldn't be deleted. Try Clear again.`, {bad:true});
+  else toast("Semester cleared. Add the new roster in Setup.");
+  setSave("All saved");
+}
+
+/* ---------- toasts / banner ---------- */
+function toast(msg, opt={}){
+  const t = document.createElement("div");
+  t.className = "toast" + (opt.bad?" bad":"");
+  t.innerHTML = `<span>${esc(msg)}</span>`;
+  if(opt.undo){ const b=document.createElement("button"); b.className="btn small"; b.textContent="Undo"; b.onclick=()=>{ t.remove(); opt.undo(); }; t.appendChild(b); }
+  $("toasts").appendChild(t);
+  while($("toasts").children.length > 3) $("toasts").firstElementChild.remove();
+  setTimeout(()=>t.remove(), opt.undo? 9000 : 5000);
+}
+function showBanner(text){ const b=$("banner"); b.textContent=text; b.hidden=!text; }
+
+/* ---------- render orchestration ---------- */
+function renderAll(){
+  buildIndex();
+  $("semLabel").textContent = cfg.semester || "";
+  const pb = $("pausedBar"); if(pb){ pb.hidden = !isPaused(); if(isPaused()) pb.innerHTML = `Clocks paused since ${esc(fmtTime(clockState().pausedAt))} · waiting times and timers are frozen <button class="btn small" data-act="resumeclock">▶ Resume clocks</button>`; }
+  $("classTabs").innerHTML = classes.map(c=>`<button role="tab" data-class="${c.id}" aria-selected="${c.id===cls}">${esc(c.name)}</button>`).join("");
+  document.title = (className(cls)? className(cls)+" · " : "") + "EMT Skills Testing Tracker";
+  if(ui.tab==="floor"){ const busySel = document.activeElement && document.activeElement.matches && document.activeElement.matches("select.fsel, select.fskill");
+    if(!ui.dragging && !busySel) renderMap(); else ui.mapDirty = true; }
+  if(ui.tab==="testing"){ const orph = orphanSubs(); $("testingTools").innerHTML = `${orph.length?`<button class="btn small primary" data-act="review" data-sub="${orph[0].id}">${orph.length} sheet${orph.length>1?"s":""} to review</button>`:""}<button class="btn small" data-act="codes">Station codes</button><button class="btn small" data-act="manual">+ Manual result</button>${pauseBtn()}`; renderDemand(); renderStations(); renderStats(); renderGrid(); }
+  if(ui.tab==="results") renderResults();
+  if(ui.tab==="give") renderGive();
+  if(ui.tab==="setup") renderSetup();
+  if(!$("modalBg").hidden && $("modal").dataset.student) openStudent($("modal").dataset.student);
+}
+function setTab(t){
+  ui.tab = t;
+  for(const b of document.querySelectorAll("nav.tabs button")) b.setAttribute("aria-selected", b.dataset.tab===t ? "true":"false");
+  for(const v of ["floor","testing","give","results","setup"]) $("view-"+v).hidden = v!==t;
+  try{ localStorage.setItem("skills-tab", t); }catch(e){}
+  renderAll();
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", e=>{
+  const tab = e.target.closest("[data-tab]"); if(tab){ setTab(tab.dataset.tab); return; }
+  const cb = e.target.closest("[data-class]"); if(cb){ openClass(cb.dataset.class); return; }
+  const card = !e.target.closest("[data-act]") && e.target.closest("[data-drag]");
+  if(card){
+    if(ui.pick===card.dataset.drag){ ui.pick=null; renderMap(); const c=$("card-"+card.dataset.drag); if(c) c.scrollIntoView({block:"nearest", behavior:"smooth"}); return; }
+    if(ui.pick && card.closest("[data-slot]")){ const n=Number(card.closest("[data-slot]").dataset.slot); placeInstructor(ui.pick, n||null); return; }
+    ui.pick = card.dataset.drag; renderMap(); return;
+  }
+  const slot = !e.target.closest("[data-act]") && e.target.closest("[data-slot]");
+  if(slot && ui.pick){ const n=Number(slot.dataset.slot); placeInstructor(ui.pick, n||null); return; }
+  const go = e.target.closest("[data-goto]"); if(go){ setTab(go.dataset.goto); return; }
+  const a = e.target.closest("[data-act]");
+  if(a){
+    const act = a.dataset.act, iid = a.dataset.iid;
+    if(act==="send") return sendWithAssistant(iid, a.dataset.sid, a.closest(".station"));
+    if(act==="sendmore"){ const sel=$("more-"+iid); if(sel) sendWithAssistant(iid, sel.value, a.closest(".station")); return; }
+    if(act==="override"){
+      const sel=$("ov-"+iid); if(!sel) return; const sid=sel.value; const st=live.stations[iid]||{};
+      buildIndex(); const e=eligibility(sid, st.skillId, iid); const k=skill(st.skillId);
+      return confirmBox("Send outside the rules?", `<b>${esc(sname(student(sid)))}</b> to ${esc(iname(iid))} for ${esc(k?k.name:"")}.<br>Rule being skipped: ${esc(e.reason||"")}.${e.away?" They'll be marked here.":""}<br>This attempt will be flagged in the records.`, "Send anyway", ()=>sendStudent(iid, sid, true));
+    }
+    if(act==="move"){
+      const sid=a.dataset.sid, to=a.dataset.to, st=student(sid);
+      return confirmBox(`Move to ${className(to)}?`, `<b>${esc(sname(st))}</b> and all ${attempts.filter(x=>x.studentId===sid).length} of their results will move to ${esc(className(to))}. You can move them back at any time.`, "Move student", ()=>moveStudent(sid, to));
+    }
+    if(act==="floorsel" || act==="asstsel") return;
+    if(act==="asstadd"){ const sel=a.parentElement.querySelector("select"); if(sel){ delete ui.asstPick[iid]; delete ui.asstOpen[iid]; setAssistant(iid, sel.value); } return; }
+    if(act==="asstswap") return swapAtStation(iid);
+    if(act==="swapsend"){ const p = swapPair(iid); if(!p){ renderAll(); return; } delete ui.asstPick[iid]; sendStudent(iid, p.main); if(live.stations[iid].studentId===p.main) setAssistant(iid, p.asst); return; }
+    if(act==="flip"){
+      const card=a.closest(".fm-card"), m=card.querySelector("select.fmain"), as=card.querySelector("select.fasst");
+      if(!m || !as || !as.value) return;
+      const newMain = as.value, newAsst = m.value;
+      if(![...m.options].some(o=>o.value===newMain)){ buildIndex(); const e=eligibility(newMain, live.stations[iid].skillId, iid); toast(`Can't swap: ${sname(student(newMain))} — ${e.reason||"not eligible here"}`, {bad:true}); return; }
+      ui.floorPick[iid] = newMain; ui.asstPick[iid] = newAsst; renderAll(); return;
+    }
+    if(act==="asstrm"){ delete ui.asstOpen[iid]; return setAssistant(iid, null); }
+    if(act==="asstshow"){ ui.asstOpen[iid] = true; renderAll(); return; }
+    if(act==="fsend"){
+      const card=a.closest(".fm-card"), sel=card.querySelector("select.fmain"), as=card.querySelector("select.fasst");
+      if(sel){ const sid=sel.value, aid=as && as.value; delete ui.floorPick[iid]; delete ui.asstPick[iid];
+        sendStudent(iid, sid);
+        if(aid && aid!==sid && live.stations[iid] && live.stations[iid].studentId===sid) setAssistant(iid, aid); }
+      return;
+    }
+    if(act==="copylayout"){
+      const to=a.dataset.to, placed=Object.values(live.stations).filter(st=>st&&st.slot).length;
+      confirmBox(`Copy layout to ${className(to)}?`, `${className(to)}'s floor will match ${esc(className(cls))}: <b>${placed}</b> instructor${placed===1?"":"s"} at the same station numbers testing the same skills, plus <b>${(live.blocked||[]).length}</b> blocked station${(live.blocked||[]).length===1?"":"s"}. Its current layout will be replaced. Students and results aren't touched.
+        <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="copyNotes"> Also copy station notes (${Object.keys(live.notes||{}).length})</label>`, "Copy layout", ()=>{});
+      $("cfOk").onclick = ()=>{ const wn = $("copyNotes").checked; closeModal(); copyLayout(to, wn); };
+      $("cfOk").className = "btn primary";
+      return;
+    }
+    if(act==="giveskill"){ ui.giveSkill = a.dataset.kid; renderGive(); return; }
+    if(act==="toldall"){ const i=Number(a.dataset.i), kid=ui.giveSkill;
+      const ids = activeStudents().map(st=>rec(st.id,kid).list[i]).filter(x=>x && !x.told).map(x=>x.id);
+      setTold(ids, true); toast(`Marked ${ids.length} ${["1st","2nd","3rd"][i]}-try result${ids.length===1?"":"s"} as given.`); return; }
+    if(act==="scope"){ ui.statScope = a.dataset.v; renderResults(); return; }
+    if(act==="codes") return openCodes();
+    if(act==="regencode") return regenCode(a.dataset.iid);
+    if(act==="review") return openReview(a.dataset.sub);
+    if(act==="approve") return approveSub(a.dataset.sub, a.dataset.res);
+    if(act==="returnsub") return returnSub(a.dataset.sub);
+    if(act==="printsub"){ const x=subs.find(s=>s.id===a.dataset.sub); if(x) printSheet(x.skillId, Object.assign({}, x, {result: x.result})); return; }
+    if(act==="printatt") return printAttempt(a.dataset.aid);
+    if(act==="pauseclock") return setPaused(true);
+    if(act==="resumeclock") return setPaused(false);
+    if(act==="manual") return openManual();
+    if(act==="manualfor"){ ui.manualReturn = a.dataset.sid; return openManual({sid:a.dataset.sid, kid:a.dataset.kid}); }
+    if(act==="flipres") return flipResult(a.dataset.aid);
+    if(act==="manualsave") return saveManual();
+    if(act==="note") return openNote(Number(a.dataset.n));
+    if(act==="notesave") return saveNote(Number(a.dataset.n), $("noteTxt").value);
+    if(act==="notedel") return saveNote(Number(a.dataset.n), "");
+    if(act==="block") return setBlocked(Number(a.dataset.n), true);
+    if(act==="unblock") return setBlocked(Number(a.dataset.n), false);
+    if(act==="pass") return recordResult(iid, "P");
+    if(act==="fail") return recordResult(iid, "F");
+    if(act==="cancel") return cancelTest(iid);
+    if(act==="close") return closeModal();
+    if(act==="delatt"){
+      const at = attempts.find(x=>x.id===a.dataset.aid); if(!at) return;
+      const sid = at.studentId;
+      return confirmBox("Delete this attempt?", `${esc(sname(student(sid)))} · ${esc(skill(at.skillId)?skill(at.skillId).name:"")} · ${at.result==="P"?"Pass":"Fail"} with ${esc(iname(at.instructorId, at.instructorName))}.`, "Delete attempt", ()=>{
+        if(!guard()) return; attempts = attempts.filter(x=>x.id!==at.id); renderAll(); deleteAttempt(at.id).catch(()=>{}); openStudent(sid);
+      });
+    }
+    if(act==="copyRoster") return copyText(rosterTable(), "Student summary");
+    if(act==="copyLog") return copyText(logTable(), "Attempt log");
+    if(act==="addins"){ if(!guard()) return; const v=$("newIns").value.trim(); if(!v) return; if(!sharedIns){ toast("Still loading instructors. Try again in a moment."); return; }
+      if(sharedIns.some(i=>i.name.trim().toLowerCase()===v.toLowerCase())){ toast(v+" is already on the list."); return; }
+      sharedIns.push({id:uid("i"), name:v, alt:[]}); $("newIns").value=""; saveInstructors(); renderSetup(); $("newIns").focus(); return; }
+    if(act==="rmins"){
+      const id=a.dataset.id; const st=live.stations[id];
+      if(st && st.studentId){ toast("That instructor is testing a student. Finish the test first."); return; }
+      return confirmBox("Remove instructor?", `${esc(iname(id))} will be removed from every lab. Their past results stay in the records.`, "Remove", ()=>{ if(!guard()||!sharedIns) return; setShared(sharedIns.filter(i=>i.id!==id)); delete live.stations[id]; saveInstructors(); saveLive(); renderAll(); });
+    }
+    if(act==="addstu"){
+      if(!guard()) return;
+      const lines = $("newStu").value.split(/\n/).map(parseStudent).filter(Boolean);
+      if(!lines.length) return;
+      const have = new Set(cfg.students.map(s=>sname(s).toLowerCase()));
+      const fresh = lines.filter(s=>!have.has(sname(s).toLowerCase()));
+      cfg.students.push(...fresh); $("newStu").value=""; saveCfg(); renderSetup();
+      toast(`Added ${fresh.length} student${fresh.length===1?"":"s"}` + (lines.length>fresh.length? ` (${lines.length-fresh.length} already on the roster)`:""));
+      return;
+    }
+    if(act==="rmstu"){
+      const id=a.dataset.id; const s=student(id); const n=attempts.filter(x=>x.studentId===id).length;
+      if(stationOf(id)){ toast("That student is testing right now."); return; }
+      return confirmBox("Remove student?", `${esc(sname(s))}${n?` and their ${n} recorded result${n>1?"s":""}`:""} will be deleted. To keep their results, mark them Withdrawn instead.`, "Remove", async ()=>{
+        if(!guard()) return; const ids=attempts.filter(x=>x.studentId===id).map(x=>x.id);
+        attempts=attempts.filter(x=>x.studentId!==id); cfg.students=cfg.students.filter(x=>x.id!==id); saveCfg(); renderAll();
+        for(const aid of ids) await deleteAttempt(aid).catch(()=>{});
+      });
+    }
+    if(act==="addclass"){
+      if(!guard()) return; const v=$("newClass").value.trim(); if(!v) return;
+      const id = uid("c");
+      const base = clone(DEFAULT_CONFIG);
+      Object.assign(base, {core: clone(cfg.core), pool: clone(cfg.pool), chosen: clone(cfg.chosen), });
+      delete base.instructors;
+      classes.push({id, name:v});
+      enqueue(P.cfg(id), ()=>retry(()=>db.doc(P.cfg(id)).set(base))).then(()=>saveClasses()).catch(()=>{});
+      $("newClass").value=""; renderAll(); toast(`Added ${v}. Click it at the top to open it.`); return;
+    }
+    if(act==="rmclass"){
+      const id=a.dataset.id; if(classes.length<2) return;
+      const nm = className(id);
+      if(id===cls && (cfg.students.length || attempts.length)){ toast("Clear this class's students and results before deleting it."); return; }
+      return confirmBox("Delete class?", `${esc(nm)} will be removed. ${id===cls?"":"Any students and results saved in it will no longer be reachable. "}This can't be undone.`, "Delete class", ()=>{
+        if(!guard()) return; classes = classes.filter(c=>c.id!==id); saveClasses();
+        if(id===cls) openClass(classes[0].id); else renderAll();
+      });
+    }
+    if(act==="addpool"){ if(!guard()) return; const v=$("newPool").value.trim(); if(!v) return; cfg.pool.push({id:uid("k"), name:v, short:v.length>12? v.slice(0,12):v}); $("newPool").value=""; saveCfg(); renderSetup(); return; }
+    if(act==="rmpool"){ if(!guard()) return; cfg.pool=cfg.pool.filter(k=>k.id!==a.dataset.kid); saveCfg(); renderSetup(); return; }
+    if(act==="clear"){
+      if($("clearTxt").value.trim().toUpperCase()!=="CLEAR"){ toast("Type CLEAR in the box first."); return; }
+      const busy = Object.values(live.stations).some(s=>s && s.studentId);
+      return confirmBox("Clear all semester data?", `This deletes ${cfg.students.length} students in ${esc(className(cls))} and ${attempts.length} results${busy?", including tests in progress":""}. Instructors and skills stay.`, "Clear everything", clearSemester);
+    }
+    return;
+  }
+  const row = e.target.closest("tr[data-student]"); if(row){ openStudent(row.dataset.student); return; }
+  if(e.target === $("modalBg")) closeModal();
+});
+document.addEventListener("change", e=>{
+  const t = e.target;
+  if(t.dataset.act==="skill") return setStationSkill(t.dataset.iid, t.value);
+  if(t.dataset.act==="break") return setBreak(t.dataset.iid, t.checked);
+  if(t.id==="importFile" && t.files && t.files[0]){ const f=t.files[0]; confirmBox("Import data?", `This writes everything in <b>${esc(f.name)}</b> into this tracker, replacing matching labs, students and results.`, "Import", ()=>importData(f)); $("cfOk").className="btn primary"; return; }
+  if(t.dataset.act==="told"){ setTold([t.dataset.aid], t.checked); return; }
+  if(t.dataset.act==="assist"){ if(!guard()){ t.checked=!t.checked; return; } const k=allSkills().find(x=>x.id===t.dataset.kid); if(k){ k.assist=t.checked; saveCfg(); renderAll(); } return; }
+  if(t.dataset.act==="asstsel"){ ui.asstPick[t.dataset.iid] = t.value; setTimeout(()=>{ if(ui.mapDirty){ ui.mapDirty=false; renderAll(); } }, 0); return; }
+  if(t.dataset.act==="floorsel"){ ui.floorPick[t.dataset.iid] = t.value; if(ui.asstPick[t.dataset.iid]===t.value) delete ui.asstPick[t.dataset.iid]; ui.mapDirty = true; setTimeout(()=>{ if(ui.mapDirty){ ui.mapDirty=false; renderAll(); } }, 0); return; }
+  if(t.dataset.act==="slot") return placeInstructor(t.dataset.iid, t.value? Number(t.value) : null);
+  if(t.dataset.act==="here"){ if(!guard()){ t.checked=!t.checked; return; } const s=student(t.dataset.id); if(s){ s.away=!t.checked; saveCfg(); renderAll(); } return; }
+  if(t.dataset.act==="pick"){
+    if(!guard()){ t.checked=!t.checked; return; }
+    const id=t.dataset.kid;
+    if(t.checked){ if(cfg.chosen.length>=RANDOM_COUNT){ t.checked=false; return; } cfg.chosen.push(id); }
+    else {
+      if(attempts.some(a=>a.skillId===id)){ t.checked=true; toast("Students have already tested this skill. Delete those results before removing it."); return; }
+      cfg.chosen = cfg.chosen.filter(x=>x!==id);
+    }
+    saveCfg(); renderSetup(); return;
+  }
+  if(t.dataset.act==="wd"){ if(!guard()) return; const s=student(t.dataset.id); if(s){ if(stationOf(s.id)&&t.checked){ t.checked=false; toast("That student is testing right now."); return; } s.withdrawn=t.checked; saveCfg(); renderAll(); } return; }
+  const ed = t.dataset.edit;
+  if(ed){
+    if(!guard()) return;
+    const v = t.value.trim();
+    if(ed==="cls"){ const c=classes.find(x=>x.id===t.dataset.id); if(c && v){ c.name=v; saveClasses(); renderAll(); } return; }
+    if(ed==="sem") cfg.semester = v;
+    if(ed==="core"||ed==="pool"){ const k=(ed==="core"?cfg.core:cfg.pool).find(x=>x.id===t.dataset.kid); if(k && v) k[t.dataset.f]=v; }
+    if(ed==="ins"){ const i=instructor(t.dataset.id); if(i && v){ i.name=v; saveInstructors(); renderAll(); } return; }
+    saveCfg(); $("semLabel").textContent = cfg.semester||"";
+  }
+});
+function showTip(t, x, y){ const v=$("vtip"); v.textContent=t; v.hidden=false; const r=v.getBoundingClientRect(); v.style.left=Math.min(innerWidth-r.width-8, x+14)+"px"; v.style.top=Math.max(8, y-r.height-10)+"px"; }
+document.addEventListener("mousemove", e=>{
+  const t = e.target.closest && e.target.closest("[data-tip]");
+  if(t){ showTip(t.dataset.tip, e.clientX, e.clientY); return; }
+  if(e.target.id==="paceHit" && vizTimeline.data){
+    const d = vizTimeline.data, svg = e.target.ownerSVGElement, pt = svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const i = Math.max(0, Math.min(d.n-1, Math.round((loc.x - d.L)/d.pw*(d.n-1))));
+    const p = d.pts[i], cx = d.X(i), xl = $("paceX");
+    xl.setAttribute("x1",cx); xl.setAttribute("x2",cx); xl.setAttribute("visibility","visible");
+    const k = skill(p.a.skillId);
+    showTip(`${fmtTime(p.a.at)}\n${p.att} tests · ${p.pas} passes\nThis one: ${sname(student(p.a.studentId))}, ${k?k.short:""}, ${p.a.result==="P"?"pass":"fail"}`, e.clientX, e.clientY);
+    return;
+  }
+  if(!$("vtip").hidden){ $("vtip").hidden = true; const xl=$("paceX"); if(xl) xl.setAttribute("visibility","hidden"); }
+});
+document.addEventListener("focusin", e=>{ const t=e.target.closest && e.target.closest("[data-tip]"); if(t){ const r=t.getBoundingClientRect(); showTip(t.dataset.tip, r.left+r.width/2, r.top); } });
+document.addEventListener("focusout", e=>{ if(e.target.closest && e.target.closest("[data-tip]")) $("vtip").hidden=true; });
+document.addEventListener("dragstart", e=>{ const c=e.target.closest && e.target.closest("[data-drag]"); if(!c) return; ui.dragging=true; e.dataTransfer.setData("text/plain", c.dataset.drag); e.dataTransfer.effectAllowed="move"; });
+document.addEventListener("dragend", ()=>{ ui.dragging=false; document.querySelectorAll(".over").forEach(x=>x.classList.remove("over")); if(ui.mapDirty){ ui.mapDirty=false; renderAll(); } });
+document.addEventListener("dragover", e=>{ const sl=e.target.closest && e.target.closest("[data-slot]"); if(!sl || !ui.dragging || sl.dataset.blocked) return; e.preventDefault(); e.dataTransfer.dropEffect="move"; document.querySelectorAll(".over").forEach(x=>{ if(x!==sl) x.classList.remove("over"); }); sl.classList.add("over"); });
+document.addEventListener("drop", e=>{ const sl=e.target.closest && e.target.closest("[data-slot]"); if(!sl) return; e.preventDefault(); const iid=e.dataTransfer.getData("text/plain"); ui.dragging=false; ui.mapDirty=false; sl.classList.remove("over"); if(iid && instructor(iid)) placeInstructor(iid, Number(sl.dataset.slot)||null); });
+document.addEventListener("toggle", e=>{ const d=e.target; if(d.matches && d.matches("details.skip")) ui.ovOpen[d.dataset.iid]=d.open; }, true);
+document.addEventListener("focusout", e=>{ setTimeout(flushSetup, 0); if(e.target.matches && e.target.matches("select.fsel, select.fskill")) setTimeout(()=>{ if(ui.mapDirty && !ui.dragging && !(document.activeElement && document.activeElement.matches("select.fsel, select.fskill"))){ ui.mapDirty=false; renderAll(); } }, 0); });
+document.addEventListener("keydown", e=>{
+  if(e.key==="Escape" && !$("modalBg").hidden) closeModal();
+  if(e.key==="Enter" && (e.ctrlKey||e.metaKey) && e.target.id==="noteTxt"){ e.preventDefault(); const b=document.querySelector('[data-act="notesave"]'); if(b) b.click(); }
+  if(e.key==="Enter" && e.target.id==="newIns"){ e.preventDefault(); document.querySelector('[data-act="addins"]').click(); }
+  if(e.key==="Enter" && e.target.id==="newClass"){ e.preventDefault(); document.querySelector('[data-act="addclass"]').click(); }
+  if(e.key==="Enter" && e.target.id==="newPool"){ e.preventDefault(); document.querySelector('[data-act="addpool"]').click(); }
+});
+$("search").addEventListener("input", e=>{ ui.search=e.target.value; buildIndex(); renderGrid(); });
+$("sortBy").addEventListener("change", e=>{ ui.sort=e.target.value; buildIndex(); renderGrid(); });
+setInterval(()=>{ for(const el of document.querySelectorAll("[data-since]")) el.textContent = elapsed(el.dataset.since); }, 30000);
+setInterval(()=>{ if(ui.tab==="testing" && db) { buildIndex(); renderGrid(); } }, 60000);
+
+
+/* ===================== Instructor stations (station codes + submitted sheets) =====================
+   Each instructor gets a station code per lab. stationCodes/{code} holds ONLY what that instructor needs:
+   their station, skill and the student you sent them. Instructors can read that one doc (by exact code) and
+   create a sheet in submissions/; everything else is owner-only (see firestore.rules). */
+const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function newCode(){ let c=""; const r = crypto.getRandomValues(new Uint32Array(6)); for(const x of r) c += CODE_CHARS[x % CODE_CHARS.length]; return c; }
+function stationUrl(code){ const base = location.href.replace(/[#?].*$/, "").replace(/[^/]*$/, ""); return base + "station.html" + (code? "#"+code : ""); }
+const codeCache = {};
+let codeSyncTimer = null;
+function scheduleCodeSync(){ clearTimeout(codeSyncTimer); codeSyncTimer = setTimeout(syncCodes, 250); }
+function codePayload(iid){
+  const st = live.stations[iid] || {}, k = st.skillId ? skill(st.skillId) : null, sh = k && window.SKILL_SHEETS ? SKILL_SHEETS[k.id] : null;
+  const stu = st.studentId ? student(st.studentId) : null;
+  return {cls, lab: className(cls), iid, instructorName: iname(iid), stationNo: st.slot || null,
+    skillId: k ? k.id : null, skillName: k ? k.name : null, sheetCode: sh ? sh.code : null, onBreak: !!st.onBreak,
+    student: stu ? {id: stu.id, name: sname(stu), attemptNo: (buildIndex(), rec(stu.id, st.skillId).n + 1), startedAt: st.startedAt || null, sendId: st.sendId || null,
+      assistantName: st.assistantId ? sname(student(st.assistantId)) : null} : null};
+}
+async function syncCodes(){
+  if(!db || !writable || !cls) return;
+  for(const [iid, st] of Object.entries(live.stations||{})){
+    if(!st || !st.code || !instructor(iid)) continue;
+    const body = codePayload(iid), key = JSON.stringify(body);
+    if(codeCache[st.code] === key) continue;
+    codeCache[st.code] = key;
+    body.updatedAt = new Date().toISOString();
+    enqueue("codes/"+st.code, ()=>retry(()=>db.doc("stationCodes/"+st.code).set(body))).catch(()=>{ delete codeCache[st.code]; });
+  }
+}
+function ensureCode(iid){
+  const st = ensureStation(iid);
+  if(!st.code){ st.code = newCode(); saveLive(); }
+  return st.code;
+}
+function regenCode(iid){
+  if(!guard()) return;
+  const st = ensureStation(iid), old = st.code;
+  st.code = newCode(); saveLive();
+  if(old){ delete codeCache[old]; enqueue("codes/"+old, ()=>retry(()=>db.doc("stationCodes/"+old).delete())).catch(()=>{}); }
+  openCodes();
+  toast(`New code for ${iname(iid)}. The old code stops working.`);
+}
+function openCodes(){
+  if(!guard()) return;
+  const list = cfg.instructors.slice().sort((a,b)=>(slotOf(a.id)||99)-(slotOf(b.id)||99) || a.name.localeCompare(b.name));
+  for(const i of list) ensureCode(i.id);
+  openModal(`<div class="row"><h2>Instructor station codes · ${esc(className(cls))}</h2><button class="btn small x" data-act="close">Close</button></div>
+    <p class="why" style="margin:0">Instructors open <b>${esc(stationUrl())}</b> on their phone, tablet or laptop and enter their code, or scan their QR code. No account needed. They only see the student you send them. Codes work for ${esc(className(cls))} only.</p>
+    <div class="codes">${list.map(i=>{ const c = live.stations[i.id].code; return `<div class="codecard">
+      <div class="qr" id="qr-${i.id}"></div>
+      <div><div style="font-weight:700">${esc(i.name)}${slotOf(i.id)?` · Stn ${slotOf(i.id)}`:""}</div>
+      <div class="codechip" style="font-size:22px">${c}</div>
+      <button class="btn small ghost" data-act="regencode" data-iid="${i.id}">New code</button></div></div>`; }).join("")}</div>`);
+  for(const i of list){ const el = $("qr-"+i.id); if(el && window.QRCode){ try{ new QRCode(el, {text: stationUrl(live.stations[i.id].code), width: 96, height: 96}); }catch(e){} } }
+}
+
+/* ---------- submitted sheets waiting for approval ---------- */
+let subs = [], subsUnsub = null;
+function subscribeSubs(){
+  if(subsUnsub){ try{ subsUnsub(); }catch(e){} subsUnsub = null; }
+  if(!db || !cls) return;
+  const id = cls;
+  subsUnsub = db.collection("submissions").where("cls","==",id).onSnapshot(snap=>{
+    if(cls!==id) return;
+    const before = new Set(subs.filter(x=>x.status==="pending").map(x=>x.id));
+    subs = snap.docs.map(d=>Object.assign({id:d.id}, clone(d.data())));
+    const fresh = subs.filter(x=>x.status==="pending" && !before.has(x.id));
+    for(const x of fresh) toast(`Sheet in: ${x.studentName} · ${skill(x.skillId)?skill(x.skillId).short:""} · ${x.result==="P"?"PASS":"FAIL"} from ${x.examiner}. Review to approve.`);
+    renderAll();
+  }, ()=>{});
+}
+function pendingFor(iid){
+  const st = live.stations[iid]; if(!st || !st.studentId) return null;
+  return subs.find(x=>x.status==="pending" && x.iid===iid && x.studentId===st.studentId && (!st.sendId || x.sendId===st.sendId)) || null;
+}
+function orphanSubs(){ return subs.filter(x=>x.status==="pending" && !Object.keys(live.stations||{}).some(iid=>pendingFor(iid)===x)); }
+function subHtml(iid, compact){
+  const x = pendingFor(iid); if(!x) return "";
+  if(compact) return `<button class="subbadge" data-act="review" data-sub="${x.id}" title="Sheet submitted: ${x.result==="P"?"PASS":"FAIL"}, ${x.points} points. Click to review.">Sheet in · ${x.result==="P"?"PASS":"FAIL"} · Review</button>`;
+  const sh = SKILL_SHEETS[x.skillId];
+  return `<div class="subline"><span class="subbadge">Sheet in</span><b>${x.result==="P"?"PASS":"FAIL"}</b> · ${x.points}/${sh?SheetKit.sheetTotal(sh):"?"}${(x.critical||[]).length?` · <b style="color:var(--fail)">${x.critical.length} critical</b>`:""}<button class="btn small primary" data-act="review" data-sub="${x.id}">Review</button></div>`;
+}
+function sheetViewHtml(sh, x){
+  const marks = x.marks || {};
+  const rows = sh.rows.map((r,i)=>{
+    if(r.h) return `<div class="h">${esc(r.h)}</div>`;
+    if(r.note) return "";
+    const got = SheetKit.rowScore(r,i,marks), max = SheetKit.rowMax(r);
+    let sub = "";
+    if(r.subs) sub = `<div class="subs">${r.subs.map((t,j)=>`${marks["r"+i+"."+j]?"✓":"<span class='miss'>✗</span>"} ${esc(t)}`).join(" · ")}</div>`;
+    if(r.choose) sub = `<div class="subs">${r.opts.filter(o=>marks["r"+i+"."+o]).map(esc).join(" · ")||"none"}</div>`;
+    return `<div class="r"><span class="${got<max?"miss":""}">${got===max?"✓":got?"◐":"✗"}</span><span>${esc(r.t)}${sub}</span><span class="pt">${got}/${max}</span></div>`;
+  }).join("");
+  return `<div class="sheetview">${rows}</div>`;
+}
+function openReview(subId){
+  const x = subs.find(s=>s.id===subId); if(!x) return;
+  const sh = SKILL_SHEETS[x.skillId], total = sh ? SheetKit.sheetTotal(sh) : 0;
+  delete $("modal").dataset.student;
+  openModal(`<div class="row"><h2>Review sheet</h2><button class="btn small x" data-act="close">Close</button></div>
+    <div class="row" style="gap:14px"><div><div style="font-size:18px;font-weight:700">${esc(x.studentName)}</div>
+      <div class="why">${esc(sh?sh.code+" · "+sh.title:x.skillId)} · attempt ${x.attemptNo||"?"} · examiner ${esc(x.examiner)}${x.assistantName?` · assistant ${esc(x.assistantName)}`:""}</div>
+      <div class="why">${esc(fmtTime(x.startedAt))} → ${esc(fmtTime(x.endedAt))}${x.scenario?` · scenario ${esc(x.scenario)}`:""}</div></div>
+      <div style="margin-left:auto;text-align:right"><div style="font-size:26px;font-weight:800;font-family:var(--display)">${x.points}/${total}</div>
+      <div class="gres ${x.result==="P"?"p":"f"}" style="font-size:15px">${x.result==="P"?"PASS":"FAIL"}</div></div></div>
+    ${(x.critical||[]).length? `<div class="notebar" style="border-color:var(--fail);background:var(--fail-soft)"><div><b style="color:var(--fail)">Critical criteria checked</b><ul style="margin:4px 0;padding-left:18px">${x.critical.map(i=>`<li>${esc(sh.critical[i])}</li>`).join("")}</ul>${x.criticalNotes?`<div><b>Rationale:</b> ${esc(x.criticalNotes)}</div>`:""}</div></div>`:""}
+    ${x.notes? `<div class="notebar"><div><b>Examiner notes:</b> ${esc(x.notes)}</div></div>`:""}
+    ${sh? sheetViewHtml(sh, x) : ""}
+    <div class="row">
+      <button class="btn ${x.result==="P"?"pass":""}" data-act="approve" data-sub="${x.id}" data-res="P">Approve as PASS</button>
+      <button class="btn ${x.result==="F"?"fail":""}" data-act="approve" data-sub="${x.id}" data-res="F">Approve as FAIL</button>
+      <button class="btn" data-act="printsub" data-sub="${x.id}">Print</button>
+      <span style="margin-left:auto"></span>
+      <input class="txt" id="returnNote" placeholder="Reason for sending back" style="max-width:220px"><button class="btn danger" data-act="returnsub" data-sub="${x.id}">Send back</button>
+    </div>
+    ${(x.critical||[]).length && x.result==="P" ? `<p class="warnline">A critical criterion is checked but the examiner marked PASS. NREMT standard is a fail when any critical criterion is checked.</p>`:""}`);
+}
+function sheetFromSub(x, res){
+  return {marks: x.marks||{}, critical: x.critical||[], criticalNotes: x.criticalNotes||"", notes: x.notes||"", scenario: x.scenario||"",
+    points: x.points, examiner: x.examiner, startedAt: x.startedAt||null, endedAt: x.endedAt||null, submittedAt: x.submittedAt||null,
+    approvedAt: new Date().toISOString(), submittedResult: x.result, sheetCode: (SKILL_SHEETS[x.skillId]||{}).code || null};
+}
+async function approveSub(subId, res){
+  if(!guard()) return;
+  const x = subs.find(s=>s.id===subId); if(!x) return;
+  const iid = Object.keys(live.stations).find(i=>pendingFor(i)===x);
+  const sheet = sheetFromSub(x, res);
+  if(iid){ closeModal(); await recordResult(iid, res, {sheet}); }
+  else {
+    buildIndex(); const r = rec(x.studentId, x.skillId);
+    if(attempts.some(a=>a.sendId && a.sendId===x.sendId)){ toast("A result for this test is already recorded. The sheet was attached to it.");
+      const a = attempts.find(a=>a.sendId===x.sendId); a.sheet = sheet; saveAttempt(a).catch(()=>{}); }
+    else if(r.passed || r.locked){ toast("That student already has a final result on this skill, so this sheet can't be recorded.", {bad:true}); return; }
+    else { const a = {id: uid("a"), studentId: x.studentId, skillId: x.skillId, instructorId: x.iid, instructorName: x.examiner, result: res, at: x.submittedAt || new Date().toISOString(), startedAt: x.startedAt||null, sendId: x.sendId||null, sheet};
+      attempts.push(a); saveAttempt(a).catch(()=>{}); toast(`Recorded ${res==="P"?"PASS":"FAIL"} for ${x.studentName} from the submitted sheet.`); }
+    closeModal(); renderAll();
+  }
+  enqueue("sub/"+subId, ()=>retry(()=>db.collection("submissions").doc(subId).delete())).catch(()=>{});
+  subs = subs.filter(s=>s.id!==subId); renderAll();
+}
+function returnSub(subId){
+  if(!guard()) return;
+  const note = ($("returnNote")||{}).value || "";
+  if(!note.trim()){ toast("Add a short reason so the instructor knows what to fix."); $("returnNote").focus(); return; }
+  enqueue("sub/"+subId, ()=>retry(()=>db.collection("submissions").doc(subId).update({status:"returned", returnNote: note.trim(), returnedAt: new Date().toISOString()}))).catch(()=>{});
+  const x = subs.find(s=>s.id===subId); if(x){ x.status = "returned"; }
+  closeModal(); renderAll(); toast("Sheet sent back to the instructor.");
+}
+function printSheet(skillId, data){
+  const sh = SKILL_SHEETS[skillId]; if(!sh){ toast("No skill sheet for this skill."); return; }
+  const w = window.open("", "_blank");
+  if(!w){ toast("Your browser blocked the print window. Allow pop-ups for this site and try again.", {bad:true}); return; }
+  w.document.open(); w.document.write(SheetKit.printHtml(sh, data)); w.document.close();
+}
+function printAttempt(aid){
+  const a = attempts.find(x=>x.id===aid); if(!a || !a.sheet) return;
+  buildIndex(); const r = rec(a.studentId, a.skillId);
+  printSheet(a.skillId, Object.assign({}, a.sheet, {studentName: sname(student(a.studentId)), result: a.result, attemptNo: r.list.findIndex(x=>x.id===aid)+1,
+    examiner: a.sheet.examiner || iname(a.instructorId, a.instructorName), assistantName: a.assistantId ? sname(student(a.assistantId)) : ""}));
+}
+
+/* ---------- moving data over from the Claude-hosted tracker ---------- */
+async function importData(file){
+  if(!guard()) return;
+  let data;
+  try{ data = JSON.parse(await file.text()); }catch(e){ toast("That file isn't a tracker export.", {bad:true}); return; }
+  const docs = data && data.docs; if(!docs || typeof docs!=="object"){ toast("That file isn't a tracker export.", {bad:true}); return; }
+  const paths = Object.keys(docs);
+  setSave("Importing…"); let n=0, bad=0;
+  for(const path of paths){ try{ await retry(()=>db.doc(path).set(docs[path])); n++; }catch(e){ bad++; } }
+  toast(bad? `Imported ${n} items; ${bad} failed. Try importing again.` : `Imported ${n} items. Reloading…`, {bad: !!bad});
+  setSave(bad? "Not saved" : "All saved", !!bad);
+  if(!bad) setTimeout(()=>location.reload(), 1200);
+}
+
+/* ---------- boot ---------- */
+let loadTimer = null;
+function onErr(){ clearTimeout(loadTimer); setSave("Connection lost", true); showBanner("Lost the connection to saved data. Reload the page to reconnect."); }
+function loadedAll(){ return loaded.cfg && loaded.live && loaded.att; }
+function doneCheck(){ if(loadedAll()){ clearTimeout(loadTimer); if(writable) showBanner(""); if(!pending) setSave("All saved"); } }
+function openClass(id){
+  if(!classes.find(c=>c.id===id)) id = classes[0] && classes[0].id;
+  if(!id) return;
+  if(id===cls && unsubs.length){ renderAll(); return; }
+  unsubs.forEach(u=>{ try{u();}catch(e){} }); unsubs = [];
+  cls = id;
+  try{ localStorage.setItem("skills-class", id); }catch(e){}
+  cfg = clone(DEFAULT_CONFIG); if(sharedIns) cfg.instructors = sharedIns; live = {stations:{}}; attempts = []; loaded = {cfg:false, live:false, att:false};
+  ui.search = ""; $("search").value = "";
+  closeModal(); renderAll();
+  clearTimeout(loadTimer);
+  loadTimer = setTimeout(()=>{ if(!loadedAll()){ setSave("Can't reach data", true); showBanner("Can't reach the saved data yet. Check your connection. The page will update as soon as it connects."); } }, 10000);
+  subscribeSubs();
+  unsubs.push(db.doc(P.cfg(id)).onSnapshot(snap=>{
+    if(cls!==id) return;
+    if(snap.exists) cfg = Object.assign(clone(DEFAULT_CONFIG), clone(snap.data()));
+    if(sharedIns) cfg.instructors = sharedIns;
+    if(!snap.metadata.fromCache){ loaded.cfg = true; doneCheck();
+      const c = (cfg.core||[]).find(k=>k.id==="cardiac");
+      if(snap.exists && writable && !cfg.cprLabel && c && c.short==="AED"){ c.short = "CPR"; cfg.cprLabel = true; saveCfg(); }
+    }
+    renderAll();
+  }, onErr));
+  unsubs.push(db.doc(P.live(id)).onSnapshot(snap=>{
+    if(cls!==id) return;
+    if(snap.exists){ const d=clone(snap.data()); live = {stations: d.stations || {}, blocked: d.blocked || [], notes: d.notes || {}, clock: d.clock || null}; normalizeLive(); }
+    if(!snap.metadata.fromCache){ loaded.live = true; doneCheck(); }
+    renderAll();
+  }, onErr));
+  unsubs.push(db.collection(P.att(id)).onSnapshot(snap=>{
+    if(cls!==id) return;
+    attempts = snap.docs.map(d=>Object.assign({id:d.id}, clone(d.data())));
+    if(!snap.metadata.fromCache){ loaded.att = true; doneCheck(); }
+    renderAll();
+  }, onErr));
+}
+/* First run with classes: move the original single-class data into "Morning lab" and create "Night lab". */
+let migrating = false;
+async function createClasses(){
+  if(migrating) return; migrating = true;
+  setSave("Setting up classes…");
+  try{
+    const oldCfg = await retry(()=>db.doc("app/config").get());
+    const oldLive = await retry(()=>db.doc("app/live").get());
+    const oldAtt = await retry(()=>db.collection("attempts").get());
+    const am = oldCfg.exists ? Object.assign(clone(DEFAULT_CONFIG), clone(oldCfg.data())) : clone(DEFAULT_CONFIG);
+    const pm = clone(DEFAULT_CONFIG);
+    Object.assign(pm, {core: clone(am.core), pool: clone(am.pool), chosen: clone(am.chosen), instructors: clone(am.instructors)});
+    await retry(()=>db.doc(P.cfg("am")).set(am));
+    if(oldLive.exists) await retry(()=>db.doc(P.live("am")).set(clone(oldLive.data())));
+    for(const d of oldAtt.docs) await retry(()=>db.collection(P.att("am")).doc(d.id).set(clone(d.data())));
+    await retry(()=>db.doc(P.cfg("pm")).set(pm));
+    await retry(()=>db.doc(P.index()).set({list:[{id:"am", name:"Morning lab"},{id:"pm", name:"Night lab"}]}));
+    setSave("All saved");
+  }catch(e){ migrating = false; handleWriteError(e); }
+}
+let sharedSub = null, buildingShared = false;
+function subscribeShared(){
+  if(sharedSub) return;
+  sharedSub = db.doc("app/instructors").onSnapshot(snap=>{
+    if(snap.exists){ setShared(clone(snap.data().list || [])); renderAll(); }
+    else if(!snap.metadata.fromCache) buildShared();
+  }, onErr);
+}
+async function buildShared(){
+  if(buildingShared) return; buildingShared = true;
+  try{
+    const list = [], byId = {}, byName = {};
+    for(const c of classes){
+      const d = await retry(()=>db.doc(P.cfg(c.id)).get());
+      const ins = d.exists ? (d.data().instructors || []) : [];
+      for(const i of ins){
+        if(byId[i.id]) continue;
+        const key = String(i.name||"").trim().toLowerCase();
+        if(key && byName[key]){ byName[key].alt.push(i.id); byId[i.id] = byName[key]; continue; }
+        const e = {id:i.id, name:i.name, alt:[]}; list.push(e); byId[i.id] = e; if(key) byName[key] = e;
+      }
+    }
+    await retry(()=>db.doc("app/instructors").set({list}));
+  }catch(e){ buildingShared = false; handleWriteError(e); }
+}
+async function boot(){
+  try{ const t=localStorage.getItem("skills-tab"); if(t) ui.tab=t; }catch(e){}
+  setTab(ui.tab);
+  if(window.__testDb){ db = window.__testDb; return startData(); }
+  if(!window.firebase || !window.FIREBASE_CONFIG || !FIREBASE_CONFIG.apiKey){
+    setSave("Not set up", true);
+    showBanner("This tracker isn't connected to its database yet (firebase-config.js is missing or empty).");
+    return;
+  }
+  firebase.initializeApp(FIREBASE_CONFIG);
+  const auth = firebase.auth();
+  $("signinBtn").onclick = async ()=>{
+    $("signinMsg").textContent = "";
+    try{ await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
+    catch(e){ $("signinMsg").textContent = e && e.code==="auth/popup-blocked" ? "Your browser blocked the sign-in window. Allow pop-ups for this site." : "Sign-in didn't finish. Try again."; }
+  };
+  let started = false;
+  auth.onAuthStateChanged(u=>{
+    if(!u || u.isAnonymous){ $("signin").hidden = false; $("acct").innerHTML = ""; return; }
+    $("signin").hidden = true;
+    $("acct").innerHTML = `${esc(u.email||"")} <button class="btn small ghost" id="signoutBtn">Sign out</button>`;
+    $("signoutBtn").onclick = ()=>auth.signOut().then(()=>location.reload());
+    if(started) return; started = true;
+    db = firebase.firestore();
+    startData();
+  });
+}
+function startData(){
+  writable = true;
+  loadTimer = setTimeout(()=>{ if(!classes.length){ setSave("Can't reach data", true); showBanner("Can't reach the saved data yet. Check your connection. The page will update as soon as it connects."); } }, 10000);
+  db.doc(P.index()).onSnapshot(snap=>{
+    if(snap.exists){
+      classes = clone(snap.data().list || []);
+      let want = cls;
+      if(!want){ try{ want = localStorage.getItem("skills-class"); }catch(e){} }
+      if(!classes.find(c=>c.id===want)) want = classes[0] && classes[0].id;
+      if(want && want!==cls) openClass(want); else renderAll();
+      subscribeShared(); subscribeHistory();
+    } else if(!snap.metadata.fromCache){
+      createClasses();
+    }
+  }, e=>{ if(e && e.code==="permission-denied"){ clearTimeout(loadTimer); setSave("No access", true); showBanner("This Google account doesn't have access to the tracker. Sign out and sign in with the owner's account."); } else onErr(e); });
+}
+boot();
+</script>
+</body>
+</html>
