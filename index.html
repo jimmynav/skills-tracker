@@ -988,7 +988,7 @@ function durText(ms){
 function timerHtml(startedAt){ return startedAt ? `<span class="timer num" data-timer="${esc(startedAt)}" title="Time since Send">${durText(activeMs(startedAt))}</span>` : ""; }
 function lastDurHtml(st){ return st && st.lastDur ? `<span class="lastdur num" title="How long the last test at this station took">Last ${durText(st.lastDur)}</span>` : ""; }
 setInterval(()=>{ for(const el of document.querySelectorAll("[data-timer]")) el.textContent = durText(activeMs(el.dataset.timer)); }, 1000);
-setInterval(()=>{ if(ui.tab==="give" && db && !pointerDown) renderGive(); }, 30000);
+setInterval(()=>{ if(ui.tab==="give" && db && !pointerDown && !(document.activeElement && document.activeElement.id==="giveVia")) renderGive(); }, 30000);
 function clockText(){ return new Date().toLocaleTimeString(undefined, {hour:"numeric", minute:"2-digit", second:"2-digit"}); }
 setInterval(()=>{ const c = document.getElementById("floorClock"); if(c) c.textContent = clockText(); }, 1000);
 function slotRows(){ const rows=[]; for(let r=0;r<7;r++) rows.push([13-2*r, 14-2*r]); return rows; }
@@ -1265,7 +1265,9 @@ function renderGive(){
     const pass = a.result==="P";
     const waitMin = Math.floor(activeMs(a.at)/60000);
     const waitTxt = waitMin<1? "just now" : minsText(waitMin);
-    const rel = a.released ? `<span class="relchip" title="Released ${esc(fmtTime(a.released))}">released</span>` : (a.told ? "" : `<a href="#" data-act="release" data-aid="${a.id}" title="Send this result to ${esc(iname(a.instructorId, a.instructorName))}'s screen to give to the student">release</a>`);
+    const giverName = iname(giverOf(a), a.instructorName), viaName = ui.giveVia && instructor(ui.giveVia) ? iname(ui.giveVia) : iname(a.instructorId, a.instructorName);
+    const rel = a.released ? `<a href="#" class="relchip" data-act="movegive" data-aid="${a.id}" title="Released ${esc(fmtTime(a.released))} to ${esc(giverName)}. Click to give it to someone else.">released${a.giver?` → ${esc(giverName)}`:""}</a>`
+      : (a.told ? "" : `<a href="#" data-act="release" data-aid="${a.id}" title="Send this result to ${esc(viaName)}'s screen to give to the student">release${ui.giveVia && instructor(ui.giveVia)?` → ${esc(viaName)}`:""}</a>`);
     const sub = a.told ? `told ${new Date(a.toldAt||a.at).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})}${a.toldBy?` by ${esc(a.toldBy)}`:""}`
                        : `<span class="gwait ${waitMin>=30?"long":""}" title="Waiting for this result since ${esc(fmtTime(a.at))}">waiting ${waitTxt}</span>`;
     return `<td class="gcell ${a.told?"told":""}"><label><span class="gres ${pass?"p":"f"}">${pass?"PASS":"FAIL"}</span>
@@ -1284,12 +1286,15 @@ function renderGive(){
   const colCount = i => act.filter(st=>{ const a=rec(st.id,kid).list[i]; return a && !a.told; }).length;
   el.innerHTML = `<div class="card gsticky">
       <div class="gchips">${chips}</div>
-      <div class="row"><h2>${esc(k?k.name:"")}</h2><span class="row" style="margin-left:auto;gap:6px">${roundTxt}</span></div></div>
+      <div class="row"><h2>${esc(k?k.name:"")}</h2><span class="row" style="margin-left:auto;gap:6px">${roundTxt}</span></div>
+      <div class="row" style="gap:8px"><label class="why" for="giveVia"><b>Give results via</b></label>
+        <select class="txt" id="giveVia" data-act="givevia" style="max-width:260px;padding:4px 8px"><option value="">Instructor who tested (default)</option>${cfg.instructors.map(i=>`<option value="${i.id}" ${ui.giveVia===i.id?"selected":""}>${esc(i.name)}</option>`).join("")}</select>
+        <span class="why">${ui.giveVia && instructor(ui.giveVia) ? `Results you release now go to <b>${esc(iname(ui.giveVia))}</b>'s screen.` : "Results you release go to the instructor who tested each student."}</span></div></div>
     <div class="card">
-      <p class="hint"><b>Release</b> sends results to the screens of the instructors who tested them, so they can give results themselves; when they tick Told, it shows here. Or tell each student yourself and tick the box. The number on a skill is how many results haven't been given yet. Each result shows who tested it and how long the student has been waiting to hear it (amber after 30 min).</p>
+      <p class="hint"><b>Release</b> sends results to instructor screens so they can give results themselves: to whoever tested each student, or to the instructor picked in <b>Give results via</b>. Click a <b>released</b> tag to hand it to someone else. When they tick Told, it shows here. Or tell each student yourself and tick the box. The number on a skill is how many results haven't been given yet. Each result shows who tested it and how long the student has been waiting to hear it (amber after 30 min).</p>
       <div class="gwrap"><table class="plain gtable"><thead><tr><th>Student</th>
         ${[0,1,2].map(i=>{ const unrel = act.filter(st=>{ const a=rec(st.id,kid).list[i]; return a && !a.told && !a.released; }).length;
-          return `<th class="gh">${["1st try","2nd try","3rd try"][i]}${unrel?`<br><button class="btn small primary" data-act="releaseall" data-i="${i}" title="Send these results to the screens of the instructors who tested them">Release ${unrel} to instructors</button>`:""}${colCount(i)?` <button class="btn small ghost" data-act="toldall" data-i="${i}" title="Mark every ${["1st","2nd","3rd"][i]}-try result for this skill as given">Mark all given</button>`:""}</th>`; }).join("")}
+          return `<th class="gh">${["1st try","2nd try","3rd try"][i]}${unrel?`<br><button class="btn small primary" data-act="releaseall" data-i="${i}" title="Send these results to instructor screens">Release ${unrel} ${ui.giveVia && instructor(ui.giveVia) ? "to "+esc(iname(ui.giveVia)) : "to instructors"}</button>`:""}${colCount(i)?` <button class="btn small ghost" data-act="toldall" data-i="${i}" title="Mark every ${["1st","2nd","3rd"][i]}-try result for this skill as given">Mark all given</button>`:""}</th>`; }).join("")}
       </tr></thead><tbody>${rows}</tbody></table></div>
     </div>`;
   fitGiveHeader();
@@ -1884,6 +1889,8 @@ document.addEventListener("click", e=>{
       return;
     }
     if(act==="release"){ e.preventDefault(); releaseResults([a.dataset.aid]); return; }
+    if(act==="movegive") return openMoveGiver(a.dataset.aid);
+    if(act==="movegiver") return moveGiver(a.dataset.aid, a.dataset.to);
     if(act==="releaseall"){ const i=Number(a.dataset.i), kid=ui.giveSkill; releaseResults(activeStudents().map(st=>rec(st.id,kid).list[i]).filter(x=>x && !x.told && !x.released).map(x=>x.id)); return; }
     if(act==="giveskill"){ ui.giveSkill = a.dataset.kid; renderGive(); return; }
     if(act==="toldall"){ const i=Number(a.dataset.i), kid=ui.giveSkill;
@@ -1984,6 +1991,7 @@ document.addEventListener("change", e=>{
   if(t.dataset.act==="skill") return setStationSkill(t.dataset.iid, t.value);
   if(t.dataset.act==="break") return setBreak(t.dataset.iid, t.checked);
   if(t.id==="importFile" && t.files && t.files[0]){ const f=t.files[0]; confirmBox("Import data?", `This writes everything in <b>${esc(f.name)}</b> into this tracker, replacing matching labs, students and results.`, "Import", ()=>importData(f)); $("cfOk").className="btn primary"; return; }
+  if(t.dataset.act==="givevia"){ ui.giveVia = t.value || null; renderGive(); return; }
   if(t.dataset.act==="told"){ setTold([t.dataset.aid], t.checked); return; }
   if(t.dataset.act==="assist"){ if(!guard()){ t.checked=!t.checked; return; } const k=allSkills().find(x=>x.id===t.dataset.kid); if(k){ k.assist=t.checked; saveCfg(); renderAll(); } return; }
   if(t.dataset.act==="asstsel"){ ui.asstPick[t.dataset.iid] = t.value; setTimeout(()=>{ if(ui.mapDirty){ ui.mapDirty=false; renderAll(); } }, 0); return; }
@@ -2126,20 +2134,35 @@ function stationClock(iid){
 }
 
 /* ---------- releasing results to instructor screens ---------- */
+function giverOf(a){ return a.giver || canon(a.instructorId); }
 function releaseResults(ids){
   if(!guard()) return;
   const now = new Date().toISOString(); let n = 0, noScreen = new Set();
   for(const id of ids){ const a = attempts.find(x=>x.id===id); if(!a || a.released || a.told) continue;
-    a.released = now; n++; saveAttempt(a).catch(()=>{});
-    const iid = canon(a.instructorId); if(!(live.stations[iid] && live.stations[iid].code)) noScreen.add(iname(iid, a.instructorName)); }
+    a.released = now; if(ui.giveVia && instructor(ui.giveVia)) a.giver = ui.giveVia; else delete a.giver; n++; saveAttempt(a).catch(()=>{});
+    const iid = giverOf(a); if(!(live.stations[iid] && live.stations[iid].code)) noScreen.add(iname(iid, a.instructorName)); }
   for(const k of Object.keys(codeCache)) delete codeCache[k];
   renderAll(); scheduleCodeSync();
   toast(`Released ${n} result${n===1?"":"s"} to instructors.` + (noScreen.size? ` ${[...noScreen].join(", ")} ${noScreen.size>1?"aren't":"isn't"} using an instructor screen in this lab, so give those yourself.`:""));
 }
 /* Results this instructor has been asked to give (released, for students they tested). */
+function moveGiver(aid, to){
+  if(!guard()) return;
+  const a = attempts.find(x=>x.id===aid); if(!a) return;
+  if(to && to!==canon(a.instructorId)) a.giver = to; else delete a.giver;
+  saveAttempt(a).catch(()=>{}); for(const k of Object.keys(codeCache)) delete codeCache[k]; scheduleCodeSync();
+  closeModal(); renderAll(); toast(`${sname(student(a.studentId))}'s result moved to ${iname(giverOf(a))}.`);
+}
+function openMoveGiver(aid){
+  const a = attempts.find(x=>x.id===aid); if(!a) return;
+  const cur = giverOf(a), tester = canon(a.instructorId);
+  openModal(`<div class="row"><h2>Who gives this result?</h2><button class="btn small x" data-act="close">Close</button></div>
+    <p class="why" style="margin:0">${esc(sname(student(a.studentId)))} · ${esc(skill(a.skillId)?skill(a.skillId).name:"")} · tested by ${esc(iname(tester, a.instructorName))}</p>
+    <div class="row">${cfg.instructors.map(i=>`<button class="btn ${i.id===cur?"primary":""}" data-act="movegiver" data-aid="${a.id}" data-to="${i.id}">${esc(i.name)}${i.id===tester?" (tested)":""}</button>`).join("")}</div>`);
+}
 function releasedFor(iid){
   const cutoff = Date.now() - 12*3600000;
-  return attempts.filter(a=>a.released && canon(a.instructorId)===iid && (!a.told || Date.parse(a.toldAt||a.released) > cutoff))
+  return attempts.filter(a=>a.released && giverOf(a)===iid && (!a.told || Date.parse(a.toldAt||a.released) > cutoff))
     .sort((a,b)=>(a.released||"").localeCompare(b.released||""))
     .map(a=>{ const k = skill(a.skillId), sh = SKILL_SHEETS[a.skillId]; buildIndex(); const r = rec(a.studentId, a.skillId);
       return {aid: a.id, studentName: sname(student(a.studentId)), skill: k ? k.short : a.skillId, result: a.result, attemptNo: r.list.findIndex(x=>x.id===a.id)+1,
@@ -2157,8 +2180,9 @@ function applyTold(){
     for(const [aid, v] of Object.entries(d.told||{})){
       const a = attempts.find(x=>x.id===aid); if(!a) continue;
       if(v && !a.told){ a.told = true; a.toldAt = v; a.toldBy = who; saveAttempt(a).catch(()=>{});
-        const lag = (Date.now() - Date.parse(v))/1000, k = skill(a.skillId);
-        toast(`Told: ${sname(student(a.studentId))} · ${k?k.short:""} by ${who} (arrived ${lag.toFixed(1)}s after the tap)`); }
+        const key = aid+"|"+v; applyTold.seen = applyTold.seen || new Set();
+        if(!applyTold.seen.has(key)){ applyTold.seen.add(key); const lag = (Date.now() - Date.parse(v))/1000, k = skill(a.skillId);
+          toast(`Told: ${sname(student(a.studentId))} · ${k?k.short:""} by ${who} (arrived ${lag.toFixed(1)}s after the tap)`); } }
       else if(!v && a.told && a.toldBy===who){ delete a.told; delete a.toldAt; delete a.toldBy; saveAttempt(a).catch(()=>{}); }
     }
   }
@@ -2465,7 +2489,7 @@ function startData(){
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127064913";
+const BUILD = "20261127065247";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{

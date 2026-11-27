@@ -384,7 +384,7 @@ function giveHtml(openByDefault){
   const isTold = g => tm[g.aid]!==undefined ? !!tm[g.aid] : g.told;
   const left = list.filter(g=>!isTold(g)).length;
   const rows = list.map(g=>{ const t = isTold(g); return `<div class="give ${t?"done":""}">
-      <div style="flex:1;min-width:0"><div class="gname">${esc(g.studentName)}</div><div class="muted">${esc(g.skill)} · attempt ${g.attemptNo}${g.points!=null?` · ${g.points}/${g.total}`:""}</div></div>
+      <div style="flex:1;min-width:0"><div class="gname">${esc(g.studentName)}</div><div class="muted">${esc(g.skill)} · attempt ${g.attemptNo}${g.points!=null?` · ${g.points}/${g.total}`:""}${g.examiner && g.examiner!==stationDoc.instructorName?` · tested by ${esc(g.examiner)}`:""}</div></div>
       <span class="gres ${g.result==="P"?"p":"f"}">${g.result==="P"?"PASS":"FAIL"}</span>
       <button class="toldbtn ${t?"on":""}" data-told="${g.aid}">${t?"✓ Told":"Told"}</button></div>
       ${g.sheet? `<button class="viewbtn" data-view="${g.aid}">View sheet${missedCount(g)?` · ${missedCount(g)} missed`:""}${(g.sheet.critical||[]).length?` · ${g.sheet.critical.length} critical`:""}</button>` : `<div class="muted" style="font-size:13px;margin-top:-4px">No digital sheet for this one (recorded by the lead instructor).</div>`}`; }).join("");
@@ -482,7 +482,7 @@ setInterval(tick, 1000);
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127064913";
+const BUILD = "20261127065247";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{
