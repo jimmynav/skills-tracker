@@ -472,6 +472,21 @@ function tick(){
 }
 setInterval(tick, 1000);
 boot();
+
+/* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
+const BUILD = "20261127063127";
+function checkVersion(){
+  if(window.__testDb) return;
+  fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{
+    if(!v || !v.build || v.build===BUILD || document.getElementById("updBar")) return;
+    const b = document.createElement("div"); b.id = "updBar";
+    b.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);top:8px;z-index:60;background:#1d5fbf;color:#fff;border-radius:999px;padding:8px 8px 8px 16px;display:flex;gap:10px;align-items:center;font:600 14px system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25)";
+    b.innerHTML = 'New version available <button style="border:0;border-radius:999px;padding:6px 14px;font-weight:700;cursor:pointer">Reload</button>';
+    b.querySelector("button").onclick = ()=>location.reload();
+    document.body.appendChild(b);
+  }).catch(()=>{});
+}
+setInterval(checkVersion, 120000); setTimeout(checkVersion, 15000);
 </script>
 </body>
 </html>
