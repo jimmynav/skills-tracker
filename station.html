@@ -474,7 +474,7 @@ setInterval(tick, 1000);
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127063127";
+const BUILD = "20261127063521";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{

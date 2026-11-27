@@ -2156,7 +2156,9 @@ function applyTold(){
     const who = iname(d.iid);
     for(const [aid, v] of Object.entries(d.told||{})){
       const a = attempts.find(x=>x.id===aid); if(!a) continue;
-      if(v && !a.told){ a.told = true; a.toldAt = v; a.toldBy = who; saveAttempt(a).catch(()=>{}); }
+      if(v && !a.told){ a.told = true; a.toldAt = v; a.toldBy = who; saveAttempt(a).catch(()=>{});
+        const lag = (Date.now() - Date.parse(v))/1000, k = skill(a.skillId);
+        toast(`Told: ${sname(student(a.studentId))} · ${k?k.short:""} by ${who} (arrived ${lag.toFixed(1)}s after the tap)`); }
       else if(!v && a.told && a.toldBy===who){ delete a.told; delete a.toldAt; delete a.toldBy; saveAttempt(a).catch(()=>{}); }
     }
   }
@@ -2185,7 +2187,7 @@ function subscribeSubs(){
     const before = new Set(subs.filter(x=>x.status==="pending").map(x=>x.id));
     subs = snap.docs.map(d=>Object.assign({id:d.id}, clone(d.data())));
     const fresh = subs.filter(x=>x.status==="pending" && !before.has(x.id));
-    for(const x of fresh) toast(`Sheet in: ${x.studentName} · ${skill(x.skillId)?skill(x.skillId).short:""} · ${x.result==="P"?"PASS":"FAIL"} from ${x.examiner}. Review to approve.`);
+    for(const x of fresh) toast(`Sheet in: ${x.studentName} · ${skill(x.skillId)?skill(x.skillId).short:""} · ${x.result==="P"?"PASS":"FAIL"} from ${x.examiner}. Review to approve.${x.submittedAt?` (arrived ${((Date.now()-Date.parse(x.submittedAt))/1000).toFixed(1)}s after submit)`:""}`);
     renderAll();
   }, ()=>{});
 }
@@ -2430,7 +2432,7 @@ function startData(){
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127063127";
+const BUILD = "20261127063521";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{
