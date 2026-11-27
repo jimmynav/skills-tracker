@@ -36,8 +36,14 @@ h1,h2,h3{font-family:var(--display);margin:0}
 .top .sk{color:var(--muted);font-size:14px}
 .pausebtn{border:1.5px solid var(--warn);background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:5px 12px;font-weight:700;min-height:36px}
 .pausebtn.on{background:var(--warn);color:#fff}
-.cand{flex-basis:100%;display:flex;gap:8px;align-items:center;font-family:var(--display);font-weight:800;font-size:18px;border-top:1px dashed var(--line);padding-top:6px;margin-top:2px}
-.cand .chip{font-family:var(--body);font-weight:600;font-size:12px}
+.top .in{flex-direction:column;align-items:stretch;gap:6px}
+.trow1{display:flex;gap:10px;align-items:center}
+.trow2{display:flex;gap:8px;align-items:center;border-top:1px dashed var(--line);padding-top:6px}
+.cand{flex:1;min-width:0;display:flex;gap:6px;align-items:center;font-family:var(--display);font-weight:800;font-size:16px;line-height:1.2}
+.cand .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.cand .chip{font-family:var(--body);font-weight:600;font-size:11px;flex:none;padding:1px 6px}
+@media (max-width:360px){ .cand{font-size:14px} }
+.trow2 .timer{margin-left:0;font-size:18px}
 .pausedbar{border:1.5px solid var(--warn);background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:10px 12px;font-weight:700}
 .irow{display:flex;gap:6px;align-items:stretch}
 .irow .item{flex:1}
@@ -100,11 +106,13 @@ details summary{cursor:pointer;margin-bottom:6px}
 </head>
 <body>
 <div class="top" id="top" hidden><div class="in">
-  <span class="stn" id="tStn">–</span>
-  <div><div class="who" id="tWho"></div><div class="sk" id="tSkill"></div></div>
-  <span class="timer" id="tTimer" hidden>0:00</span>
-  <button class="pausebtn" id="tPause" hidden>Pause</button>
-  <div class="cand" id="tCand" hidden></div>
+  <div class="trow1"><span class="stn" id="tStn">–</span>
+  <div><div class="who" id="tWho"></div><div class="sk" id="tSkill"></div></div></div>
+  <div class="trow2" id="tRow2" hidden>
+    <div class="cand" id="tCand"></div>
+    <span class="timer" id="tTimer" hidden>0:00</span>
+    <button class="pausebtn" id="tPause" hidden>Pause</button>
+  </div>
 </div></div>
 <main class="wrap" id="app"><div class="card center"><div class="muted">Loading…</div></div></main>
 <div class="bar" id="bar" hidden><div class="in">
@@ -205,8 +213,8 @@ function render(){
   $("tTimer").hidden = !(stu && form && form.tStart);
   const running = !!(stu && form && form.tStart && !form.tEnd && !(sub && sub.status==="pending"));
   const pb = $("tPause"); pb.hidden = !running; pb.textContent = form && form.pausedAt ? "Resume" : "Pause"; pb.classList.toggle("on", !!(form && form.pausedAt));
-  const tc = $("tCand"); tc.hidden = !stu;
-  if(stu) tc.innerHTML = `${esc(stu.name)} ${stu.attemptNo>1?`<span class="chip re">Retest ${stu.attemptNo}</span>`:""}${stu.assistantName?`<span class="chip">Asst: ${esc(stu.assistantName)}</span>`:""}`;
+  const tc = $("tCand"); $("tRow2").hidden = !stu;
+  if(stu) tc.innerHTML = `<span class="nm" title="${esc(stu.name)}">${esc(stu.name)}</span>${stu.attemptNo>1?`<span class="chip re">R${stu.attemptNo}</span>`:""}${stu.assistantName?`<span class="chip" title="Assistant">Asst: ${esc(stu.assistantName.split(",")[0])}</span>`:""}`;
   if(d.onBreak && !stu){ $("bar").hidden = true; $("app").innerHTML = `<div class="card center"><div class="big">You're marked “not here”</div><div class="muted">The lead instructor will send students when you're back.</div></div>${switchLink()}`; return; }
   if(!stu){
     $("bar").hidden = true;
@@ -344,12 +352,14 @@ async function submit(){
 /* ---------- pause + step notes ---------- */
 function closePause(){ if(form && form.pausedAt){ form.pauses = (form.pauses||[]).concat([{s: form.pausedAt, e: new Date().toISOString(), why: form.pauseReason || ""}]); form.pausedAt = null; form.pauseReason = ""; } }
 function askPause(){
-  openSheet(`<h2>Pause the clock?</h2>
-    <div class="muted">For problems that aren't the candidate's fault, like equipment malfunction. Paused time isn't counted and is noted on the sheet.</div>
+  // Stop the clock first; the reason is optional and asked while already paused.
+  form.pausedAt = new Date().toISOString(); form.pauseReason = ""; saveDraft(); pushStatus("paused"); render();
+  openSheet(`<h2>Clock paused</h2>
+    <div class="muted">Paused time isn't counted and is noted on the sheet. Add a reason if you like.</div>
     <input class="txt" id="pWhy" placeholder="Reason (optional), e.g. AED trainer battery died" maxlength="120">
-    <div style="display:flex;gap:10px"><button class="btn" id="pNo" style="flex:1">Cancel</button><button class="btn primary" id="pGo" style="flex:1">Pause clock</button></div>`);
+    <div style="display:flex;gap:10px"><button class="btn" id="pNo" style="flex:1">Skip</button><button class="btn primary" id="pGo" style="flex:1">Save reason</button></div>`);
   $("pNo").onclick = closeSheet;
-  $("pGo").onclick = ()=>{ form.pausedAt = new Date().toISOString(); form.pauseReason = $("pWhy").value.trim(); saveDraft(); pushStatus("paused"); closeSheet(); render(); };
+  $("pGo").onclick = ()=>{ if(form.pausedAt){ form.pauseReason = $("pWhy").value.trim(); saveDraft(); render(); } closeSheet(); };
 }
 function editNote(i){
   const sh = sheet(), r = sh.rows[i]; if(!r) return;
