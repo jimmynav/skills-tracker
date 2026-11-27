@@ -343,6 +343,15 @@ textarea.txt{min-height:110px;resize:vertical}
 .modal{background:var(--card);border-radius:12px;max-width:720px;width:100%;padding:18px 20px;display:grid;gap:14px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
 .modal h2{font-size:20px}
 .modal .x{margin-left:auto}
+.modal.wide{max-width:960px}
+.se-table td{vertical-align:top} .se-table td.n,.se-table th.n{text-align:center;width:44px} .se-table td.nb{width:78px;white-space:nowrap;text-align:right}
+.se-h td{background:var(--paper);font-weight:700;text-transform:uppercase;font-size:12px;letter-spacing:.03em}
+.se-note td{font-style:italic;color:var(--muted,#667);font-size:13px}
+.se-cb{display:flex;gap:8px;align-items:flex-start;cursor:pointer;padding:2px 0}
+.se-cb input{margin-top:3px;width:16px;height:16px;flex:none}
+.se-subs{display:flex;flex-wrap:wrap;gap:2px 16px;margin:4px 0 0 4px;font-size:14px}
+.se-crit{display:grid;gap:2px;margin-top:6px;font-size:14px}
+.se-inote{margin-top:4px;width:100%;font-size:13px}
 .att{display:flex;gap:8px;align-items:center;font-size:14px;padding:4px 0;border-bottom:1px dashed var(--line)}
 .att:last-child{border-bottom:0}
 .att .r{font-family:var(--mono);font-weight:600;width:20px}
@@ -1173,7 +1182,7 @@ function openStudent(sid){
     const r = rec(sid, k.id);
     const state = r.passed? `<span class="chip ok">Passed</span>` : r.locked? `<span class="chip bad">Failed 3×, locked</span>` : r.n? `<span class="chip" style="color:var(--warn);border-color:var(--warn)">Needs retest · attempt ${r.n+1} of ${MAX_ATTEMPTS}</span>` : `<span class="chip">Not tested</span>`;
     const atts = r.list.map((a,i)=>`<div class="att"><span class="r ${a.result}">${a.result}</span><span>Attempt ${i+1} · ${esc(iname(a.instructorId, a.instructorName))}${a.manual?` · <span style="color:var(--warn)">manual entry</span>`:a.override?` · <span style="color:var(--warn)">rules skipped (${esc(a.override)})</span>`:""}${a.assistantId?` · assistant ${esc(sname(student(a.assistantId)))}`:""}${a.edited?` · <span style="color:var(--warn)">changed from ${a.edited.from==="P"?"pass":"fail"}</span>`:""}</span><span class="t">${fmtTime(a.at)}</span>
-       ${a.sheet?`<button class="btn small" data-act="printatt" data-aid="${a.id}">Sheet</button>`:""}<button class="btn small" data-act="flipres" data-aid="${a.id}">Change to ${a.result==="P"?"Fail":"Pass"}</button>
+       ${a.sheet?`<button class="btn small" data-act="printatt" data-aid="${a.id}">Sheet</button>`:""}${SKILL_SHEETS[a.skillId] && (!a.sheet || a.sheet.paper) ? `<button class="btn small" data-act="sheetentry" data-aid="${a.id}" data-sid="${sid}">${a.sheet? "Edit sheet" : "Enter sheet"}</button>` : ""}<button class="btn small" data-act="flipres" data-aid="${a.id}">Change to ${a.result==="P"?"Fail":"Pass"}</button>
        <button class="btn small ghost" data-act="delatt" data-aid="${a.id}">Delete</button></div>`).join("");
     const atStn = stationOf(sid), testingHere = atStn && live.stations[atStn].skillId===k.id;
     const addBtn = (!r.passed && !r.locked && !testingHere) ? `<button class="btn small" data-act="manualfor" data-sid="${sid}" data-kid="${k.id}" style="margin-top:4px">+ Add result</button>` : "";
@@ -1183,12 +1192,12 @@ function openStudent(sid){
     <div class="row">${statusChip(s,x)} <span class="why">${x.passed} of ${x.total} passed · ${x.left} left</span>${s.homeClass && s.homeClass!==cls?` <span class="chip" style="color:var(--warn);border-color:var(--warn)">Visiting from ${esc(className(s.homeClass)||"another lab")}</span>`:""}</div>
     ${classes.length>1?`<div class="row move">${classes.filter(c=>c.id!==cls).map(c=>`<button class="btn small" data-act="move" data-sid="${s.id}" data-to="${c.id}" ${x.at?"disabled title=\"Finish the current test first\"":""}>${c.id===s.homeClass?"Send back to ":"Move to "}${esc(c.name)}</button>`).join("")}<span class="why">Results move with the student.</span></div>`:""}
     ${blocks}
-    <p class="why">Use <b>Change to Pass/Fail</b> to fix a grade, <b>+ Add result</b> to enter one by hand (doesn't reset their waiting clock), and <b>Delete</b> only to remove a result that shouldn't exist.</p>`);
+    <p class="why">Use <b>Change to Pass/Fail</b> to fix a grade, <b>+ Add result</b> to enter one by hand (doesn't reset their waiting clock), <b>Enter sheet</b> to type in a paper skill sheet, and <b>Delete</b> only to remove a result that shouldn't exist.</p>`);
   $("modal").dataset.student = sid;
 }
 function fmtTime(iso){ if(!iso) return ""; const d=new Date(iso); return d.toLocaleDateString(undefined,{weekday:"short", month:"short", day:"numeric"}) + " " + d.toLocaleTimeString(undefined,{hour:"numeric", minute:"2-digit"}); }
 function openModal(html){ $("modal").innerHTML = html; $("modalBg").hidden=false; const b=$("modal").querySelector("button,input"); if(b) b.focus(); }
-function closeModal(){ $("modalBg").hidden=true; $("modal").innerHTML=""; delete $("modal").dataset.student; delete $("modal").dataset.confirm; }
+function closeModal(){ $("modalBg").hidden=true; $("modal").innerHTML=""; $("modal").classList.remove("wide"); delete $("modal").dataset.back; delete $("modal").dataset.aid; delete $("modal").dataset.student; delete $("modal").dataset.confirm; }
 function confirmBox(title, text, okLabel, onOk){
   delete $("modal").dataset.student;
   openModal(`<h2>${esc(title)}</h2><p style="margin:0">${text}</p><div class="row"><button class="btn danger" id="cfOk">${esc(okLabel)}</button><button class="btn" data-act="close">Cancel</button></div>`);
@@ -1324,6 +1333,99 @@ function flipResult(aid){
   });
   $("cfOk").className = "btn primary";
 }
+/* ---------- typing in a paper skill sheet ---------- */
+function localDate(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function localTime(d){ return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+function whenFrom(date, time){
+  if(!date) return null;
+  const today = localDate(new Date());
+  if(date===today && !time) return new Date().toISOString();
+  const d = new Date(date + "T" + (time || "12:00"));
+  return isNaN(d) ? null : d.toISOString();
+}
+function openSheetEntry(aid, backSid){
+  const a = attempts.find(x=>x.id===aid); if(!a) return;
+  const sheet = SKILL_SHEETS[a.skillId]; if(!sheet){ toast("There's no digital sheet for this skill.", {bad:true}); return; }
+  const sh = a.sheet || {};
+  const marks = sh.marks || {}, crit = sh.critical || [], notes = sh.itemNotes || {};
+  buildIndex(); const r = rec(a.studentId, a.skillId); const no = r.list.findIndex(x=>x.id===aid) + 1;
+  const at = new Date(a.at);
+  const cb = (key, label) => `<label class="se-cb"><input type="checkbox" data-k="${key}" ${marks[key]?"checked":""}> ${esc(label)}</label>`;
+  const rows = sheet.rows.map((row,i)=>{
+    if(row.h) return `<tr class="se-h"><td colspan="3">${esc(row.h)}</td></tr>`;
+    if(row.note) return `<tr class="se-note"><td colspan="3">${esc(row.note)}</td></tr>`;
+    let cell;
+    if(row.p) cell = cb("r"+i, row.t);
+    else if(row.subs) cell = `<div>${esc(row.t)}</div><div class="se-subs">${row.subs.map((x,j)=>cb("r"+i+"."+j, x)).join("")}</div>`;
+    else if(row.choose) cell = `<div>${esc(row.t)} <span class="why">(up to ${row.choose})</span></div><div class="se-subs">${row.opts.map(o=>cb("r"+i+"."+o, o)).join("")}</div>`;
+    return `<tr><td>${cell}<input class="txt se-inote" data-note="${i}" placeholder="Note (optional)" value="${esc(notes[i]||"")}" ${notes[i]?"":"hidden"}></td><td class="n">${SheetKit.rowMax(row)}</td><td class="nb"><button class="btn small ghost" data-act="senote" data-i="${i}" title="Add a note to this step">+ Note</button></td></tr>`;
+  }).join("");
+  openModal(`<div class="row"><h2>${a.sheet? "Edit" : "Enter"} paper sheet</h2><button class="btn small x" data-act="close">Close</button></div>
+    <div class="why" style="margin-top:-8px">${esc(sheet.code)} · ${esc(sheet.title)}</div>
+    <div class="two" style="gap:10px">
+      <div><b>${esc(sname(student(a.studentId)))}</b> · attempt ${no} · ${esc(iname(a.instructorId, a.instructorName))} · <b style="color:var(--${a.result==="P"?"pass":"fail"})">${a.result==="P"?"PASS":"FAIL"}</b></div>
+      <div class="row" style="gap:6px;justify-content:flex-end"><label for="seDate" class="why">Date</label><input type="date" class="txt" id="seDate" value="${localDate(at)}" style="width:160px"></div>
+      <div class="row" style="gap:6px"><label class="why" for="seStart">Time started</label><input type="time" class="txt" id="seStart" value="${sh.startedAt? localTime(new Date(sh.startedAt)) : ""}" style="width:120px">
+        <label class="why" for="seEnd">ended</label><input type="time" class="txt" id="seEnd" value="${sh.endedAt? localTime(new Date(sh.endedAt)) : ""}" style="width:120px"></div>
+      ${sheet.scenario? `<div class="row" style="gap:6px;justify-content:flex-end"><label class="why" for="seScen">Scenario #</label><input class="txt" id="seScen" value="${esc(sh.scenario||"")}" style="width:120px"></div>` : "<div></div>"}
+    </div>
+    <div class="row" style="gap:8px"><button class="btn small" data-act="sheetcheckall" data-on="1">Check all steps</button><button class="btn small" data-act="sheetcheckall" data-on="0">Clear all</button><span class="why">Tip: Check all, then untick what was missed.</span><span style="margin-left:auto;font-weight:700" id="seTotal"></span></div>
+    <div class="tablewrap" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px"><table class="plain se-table"><thead><tr><th>Step</th><th class="n">Pts</th><th></th></tr></thead><tbody id="seRows">${rows}</tbody></table></div>
+    <div><b>Critical criteria</b><div class="se-crit">${sheet.critical.map((c,i)=>`<label class="se-cb"><input type="checkbox" data-crit="${i}" ${crit.includes(i)?"checked":""}> ${esc(c)}</label>`).join("")}</div></div>
+    <div class="field" id="seRatWrap" ${crit.length?"":"hidden"}><label for="seRat">Rationale for critical criteria</label><textarea class="txt" id="seRat" rows="2">${esc(sh.criticalNotes||"")}</textarea></div>
+    <div class="field"><label for="seNotes">Examiner notes</label><textarea class="txt" id="seNotes" rows="3">${esc(sh.notes||"")}</textarea></div>
+    <div class="row"><button class="btn primary" data-act="sheetsave" data-aid="${aid}">Save sheet</button><button class="btn" data-act="sheetback">Cancel</button><span class="why">Result stays ${a.result==="P"?"PASS":"FAIL"}. Use Change to Pass/Fail on the student card to change it.</span></div>`);
+  delete $("modal").dataset.student;
+  $("modal").dataset.back = backSid || "";
+  $("modal").dataset.aid = aid;
+  $("modal").classList.add("wide");
+  $("modal").addEventListener("change", e=>{ if(e.target.matches("[data-crit]")) $("seRatWrap").hidden = !document.querySelector("[data-crit]:checked"); seTotal(); });
+  seTotal();
+}
+function seMarks(){
+  const m = {};
+  for(const c of document.querySelectorAll("#seRows input[type=checkbox][data-k]")) if(c.checked) m[c.dataset.k] = true;
+  return m;
+}
+function seTotal(){
+  const aid = $("modal").dataset.aid, a = attempts.find(x=>x.id===aid); if(!a) return;
+  const sheet = SKILL_SHEETS[a.skillId], m = seMarks();
+  const el = $("seTotal"); if(el) el.textContent = `${SheetKit.sheetScore(sheet, m)} / ${SheetKit.sheetTotal(sheet)} points`;
+}
+function saveSheetEntry(){
+  if(!guard()) return;
+  const aid = $("modal").dataset.aid, a = attempts.find(x=>x.id===aid); if(!a) return;
+  const sheet = SKILL_SHEETS[a.skillId];
+  const crit = [...document.querySelectorAll("[data-crit]:checked")].map(c=>+c.dataset.crit);
+  const rat = ($("seRat")||{}).value || "";
+  if(crit.length && !rat.trim()){ toast("Add the rationale for the critical criteria.", {bad:true}); $("seRat").focus(); return; }
+  const date = $("seDate").value; if(!date){ toast("Pick the date it was tested.", {bad:true}); return; }
+  const st = $("seStart").value, en = $("seEnd").value;
+  const startedAt = st ? new Date(date+"T"+st).toISOString() : null;
+  let endedAt = en ? new Date(date+"T"+en).toISOString() : null;
+  if(startedAt && endedAt && endedAt < startedAt){ toast("End time is before the start time.", {bad:true}); return; }
+  const itemNotes = {}; for(const n of document.querySelectorAll("[data-note]")) if(n.value.trim()) itemNotes[n.dataset.note] = n.value.trim();
+  const marks = seMarks();
+  a.sheet = Object.assign({}, a.sheet||{}, {marks, critical: crit, criticalNotes: crit.length? rat : "", notes: $("seNotes").value, scenario: ($("seScen")||{}).value || "",
+    points: SheetKit.sheetScore(sheet, marks), examiner: iname(a.instructorId, a.instructorName), startedAt, endedAt,
+    activeMs: startedAt && endedAt ? (new Date(endedAt) - new Date(startedAt)) : null, pauses: [], pausedMs: 0, itemNotes,
+    submittedResult: a.result, sheetCode: sheet.code, paper: true, approvedAt: (a.sheet && a.sheet.approvedAt) || new Date().toISOString(), enteredAt: new Date().toISOString()});
+  if(date !== localDate(new Date(a.at))) a.at = whenFrom(date, st || en || "12:00");   // date corrected from the paper sheet
+  saveAttempt(a).catch(()=>{});
+  const back = $("modal").dataset.back; closeModal(); renderAll();
+  toast(`Sheet saved for ${sname(student(a.studentId))} · ${skill(a.skillId).short} (${a.sheet.points}/${SheetKit.sheetTotal(sheet)}).`);
+  if(back) openStudent(back);
+}
+function saveInsName(){
+  const e = $("insEdit"); if(!e) return;
+  const i = instructor(e.dataset.id), v = e.value.trim();
+  if(!v){ toast("Type a name.", {bad:true}); e.focus(); return; }
+  if(cfg.instructors.some(x=>x!==i && x.name.trim().toLowerCase()===v.toLowerCase())){ toast("Another instructor already has that name.", {bad:true}); e.focus(); return; }
+  if(!guard()) return;
+  const old = i.name; i.name = v; ui.editIns = null; e.blur();
+  saveInstructors(); renderAll();
+  if(old!==v) toast(`Renamed ${old} to ${v}. Past results and exports show the new name.`);
+}
 function openManual(preset){
   if(!preset) ui.manualReturn = null;
   delete $("modal").dataset.student;   // keep a background refresh from swapping this form for the student card
@@ -1336,6 +1438,8 @@ function openManual(preset){
       <div class="field"><label for="mSkill">Skill</label><select class="txt" id="mSkill">${activeSkills().map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="mIns">Instructor</label><select class="txt" id="mIns">${cfg.instructors.map(i=>`<option value="${i.id}">${esc(i.name)}</option>`).join("")}</select></div>
       <div class="field"><label>Result</label><div class="row"><label class="row" style="gap:4px"><input type="radio" name="mRes" value="P" checked> Pass</label><label class="row" style="gap:4px"><input type="radio" name="mRes" value="F"> Fail</label></div></div>
+      <div class="field"><label for="mDate">Date tested</label><div class="row" style="gap:6px"><input type="date" class="txt" id="mDate" value="${localDate(new Date())}" style="flex:1"><input type="time" class="txt" id="mTime" aria-label="Time tested (optional)" title="Time (optional)" style="width:120px"></div></div>
+      <div class="field"><label>&nbsp;</label><label class="row" style="gap:6px"><input type="checkbox" id="mSheet"> Enter the skill sheet from paper next</label></div>
     </div>
     <div id="mInfo" class="why"></div>
     <div class="row"><button class="btn primary" data-act="manualsave">Save result</button><button class="btn" data-act="close">Cancel</button></div>`);
@@ -1356,9 +1460,14 @@ function saveManual(){
   if(!sid || !kid || !iid || !res) return;
   if(r.passed || r.locked){ toast(r.passed? "Already passed this skill." : "Already failed 3 times.", {bad:true}); return; }
   if(at && live.stations[at].skillId===kid){ toast("That student is testing this skill at a station now.", {bad:true}); return; }
-  const a = {id: uid("a"), studentId: sid, skillId: kid, instructorId: iid, instructorName: iname(iid), result: res, at: new Date().toISOString(), startedAt: null, manual: true, override: "Manual entry"};
+  const when = whenFrom($("mDate").value, $("mTime").value);
+  if(!when){ toast("Pick the date it was tested.", {bad:true}); return; }
+  if(new Date(when) > new Date(Date.now()+60000)){ toast("That date is in the future.", {bad:true}); return; }
+  const wantSheet = $("mSheet").checked && !!SKILL_SHEETS[kid];
+  const a = {id: uid("a"), studentId: sid, skillId: kid, instructorId: iid, instructorName: iname(iid), result: res, at: when, startedAt: null, manual: true, override: "Manual entry"};
   attempts.push(a); closeModal(); renderAll(); saveAttempt(a).catch(()=>{});
-  if(ui.manualReturn){ const back = ui.manualReturn; ui.manualReturn = null; openStudent(back); }
+  if(wantSheet){ openSheetEntry(a.id, ui.manualReturn); ui.manualReturn = null; }
+  else if(ui.manualReturn){ const back = ui.manualReturn; ui.manualReturn = null; openStudent(back); }
   buildIndex(); const r2 = rec(sid,kid);
   toast(`Manual ${res==="P"?"PASS":"FAIL"}: ${sname(student(sid))} · ${skill(kid).short}${res==="F" && r2.locked?" · 3rd fail, skill locked":""}`, {undo: ()=>{ attempts = attempts.filter(x=>x.id!==a.id); renderAll(); deleteAttempt(a.id).catch(()=>{}); toast("Manual result removed."); }});
 }
@@ -1705,7 +1814,11 @@ function renderSetup(){
       <input class="txt grow" data-edit="core" data-kid="${k.id}" data-f="name" value="${esc(k.name)}" aria-label="Skill name">
       <input class="txt short" data-edit="core" data-kid="${k.id}" data-f="short" value="${esc(k.short)}" aria-label="Short label">
       <label class="why" style="display:flex;gap:4px;align-items:center;white-space:nowrap" title="A second student goes along as assistant EMT (not tested)"><input type="checkbox" data-act="assist" data-kid="${k.id}" ${needsAssist(k)?"checked":""}> Assistant</label></div>`).join("");
-  const insHtml = cfg.instructors.map(i=>`<div class="li"><input class="txt grow" data-edit="ins" data-id="${i.id}" value="${esc(i.name)}" aria-label="Instructor name">
+  const insHtml = cfg.instructors.map(i=> ui.editIns===i.id
+    ? `<div class="li"><input class="txt grow" id="insEdit" data-id="${i.id}" value="${esc(i.name)}" aria-label="Instructor name" autocomplete="off">
+      <button class="btn small primary" data-act="inssave" data-id="${i.id}">Save</button><button class="btn small" data-act="inscancel">Cancel</button></div>`
+    : `<div class="li"><span class="grow sname">${esc(i.name)}</span>
+      <button class="btn small" data-act="insedit" data-id="${i.id}">Edit</button>
       <button class="btn small ghost" data-act="rmins" data-id="${i.id}">Remove</button></div>`).join("") || `<p class="why">No instructors yet.</p>`;
   const stuHtml = cfg.students.slice().sort((a,b)=>sname(a).localeCompare(sname(b))).map(s=>`<div class="li"><span class="grow sname">${esc(sname(s))}</span>
       <label class="why" style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-act="wd" data-id="${s.id}" ${s.withdrawn?"checked":""}> Withdrawn</label>
@@ -1907,6 +2020,11 @@ document.addEventListener("click", e=>{
     if(act==="returnsub") return returnSub(a.dataset.sub);
     if(act==="printsub"){ const x=subs.find(s=>s.id===a.dataset.sub); if(x) printSheet(x.skillId, Object.assign({}, x, {result: x.result})); return; }
     if(act==="printatt") return printAttempt(a.dataset.aid);
+    if(act==="sheetentry") return openSheetEntry(a.dataset.aid, a.dataset.sid);
+    if(act==="sheetcheckall"){ for(const c of document.querySelectorAll("#seRows input[type=checkbox]")) c.checked = a.dataset.on==="1"; return seTotal(); }
+    if(act==="sheetsave") return saveSheetEntry();
+    if(act==="senote"){ const n = document.querySelector(`[data-note="${a.dataset.i}"]`); if(n){ n.hidden = false; n.focus(); } return; }
+    if(act==="sheetback"){ const back = $("modal").dataset.back; closeModal(); if(back) openStudent(back); return; }
     if(act==="pauseclock") return setPaused(true);
     if(act==="resumeclock") return setPaused(false);
     if(act==="manual") return openManual();
@@ -1943,6 +2061,9 @@ document.addEventListener("click", e=>{
     if(act==="addins"){ if(!guard()) return; const v=$("newIns").value.trim(); if(!v) return; if(!sharedIns){ toast("Still loading instructors. Try again in a moment."); return; }
       if(sharedIns.some(i=>i.name.trim().toLowerCase()===v.toLowerCase())){ toast(v+" is already on the list."); return; }
       sharedIns.push({id:uid("i"), name:v, alt:[]}); $("newIns").value=""; saveInstructors(); renderSetup(); $("newIns").focus(); return; }
+    if(act==="insedit"){ ui.editIns = a.dataset.id; renderSetup(); const e=$("insEdit"); if(e){ e.focus(); e.select(); } return; }
+    if(act==="inscancel"){ ui.editIns = null; if(document.activeElement) document.activeElement.blur(); renderSetup(); return; }
+    if(act==="inssave") return saveInsName();
     if(act==="rmins"){
       const id=a.dataset.id; const st=live.stations[id];
       if(st && st.studentId){ toast("That instructor is testing a student. Finish the test first."); return; }
@@ -2029,7 +2150,6 @@ document.addEventListener("change", e=>{
     if(ed==="cls"){ const c=classes.find(x=>x.id===t.dataset.id); if(c && v){ c.name=v; saveClasses(); renderAll(); } return; }
     if(ed==="sem") cfg.semester = v;
     if(ed==="core"||ed==="pool"){ const k=(ed==="core"?cfg.core:cfg.pool).find(x=>x.id===t.dataset.kid); if(k && v) k[t.dataset.f]=v; }
-    if(ed==="ins"){ const i=instructor(t.dataset.id); if(i && v){ i.name=v; saveInstructors(); renderAll(); } return; }
     saveCfg(); $("semLabel").textContent = cfg.semester||"";
   }
 });
@@ -2060,6 +2180,8 @@ document.addEventListener("focusout", e=>{ setTimeout(flushSetup, 0); if(e.targe
 document.addEventListener("keydown", e=>{
   if(e.key==="Escape" && !$("modalBg").hidden) closeModal();
   if(e.key==="Enter" && (e.ctrlKey||e.metaKey) && e.target.id==="noteTxt"){ e.preventDefault(); const b=document.querySelector('[data-act="notesave"]'); if(b) b.click(); }
+  if(e.key==="Enter" && e.target.id==="insEdit"){ e.preventDefault(); saveInsName(); }
+  if(e.key==="Escape" && e.target.id==="insEdit"){ ui.editIns = null; e.target.blur(); renderSetup(); }
   if(e.key==="Enter" && e.target.id==="newIns"){ e.preventDefault(); document.querySelector('[data-act="addins"]').click(); }
   if(e.key==="Enter" && e.target.id==="newClass"){ e.preventDefault(); document.querySelector('[data-act="addclass"]').click(); }
   if(e.key==="Enter" && e.target.id==="newPool"){ e.preventDefault(); document.querySelector('[data-act="addpool"]').click(); }
@@ -2348,7 +2470,7 @@ function printAttempt(aid){
   const a = attempts.find(x=>x.id===aid); if(!a || !a.sheet) return;
   buildIndex(); const r = rec(a.studentId, a.skillId);
   printSheet(a.skillId, Object.assign({}, a.sheet, {studentName: sname(student(a.studentId)), result: a.result, attemptNo: r.list.findIndex(x=>x.id===aid)+1,
-    examiner: a.sheet.examiner || iname(a.instructorId, a.instructorName), assistantName: a.assistantId ? sname(student(a.assistantId)) : ""}));
+    examiner: iname(a.instructorId, a.sheet.examiner || a.instructorName), assistantName: a.assistantId ? sname(student(a.assistantId)) : ""}));
 }
 
 /* ---------- export to Google Drive: Semester / Lab / one Google Doc per student ---------- */
@@ -2420,7 +2542,7 @@ function studentPdfData(st, c, d, semName){
     const sheetDef = SKILL_SHEETS[k.id];
     const list = mine.filter(a=>a.skillId===k.id).map((a,i)=>{
       const sh = a.sheet || null;
-      const examiner = (sh && sh.examiner) || iname(a.instructorId, a.instructorName);
+      const examiner = iname(a.instructorId, (sh && sh.examiner) || a.instructorName);   // current name, so a rename shows up
       let score = null, missed = null;
       if(sh && sheetDef){ score = SheetKit.sheetScore(sheetDef, sh.marks||{}); missed = sheetDef.rows.filter((r,ri)=>!r.h && !r.note && SheetKit.rowScore(r,ri,sh.marks||{}) < SheetKit.rowMax(r)).length; }
       return {result: a.result, at: a.at, examiner, no: i+1, score, missed, critCount: sh ? (sh.critical||[]).length : 0, activeMs: sh && sh.activeMs!=null ? sh.activeMs : null,
@@ -2701,7 +2823,7 @@ function startData(){
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127074400";
+const BUILD = "20261127075620";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{
