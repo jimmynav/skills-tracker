@@ -2143,7 +2143,11 @@ function releasedFor(iid){
     .sort((a,b)=>(a.released||"").localeCompare(b.released||""))
     .map(a=>{ const k = skill(a.skillId), sh = SKILL_SHEETS[a.skillId]; buildIndex(); const r = rec(a.studentId, a.skillId);
       return {aid: a.id, studentName: sname(student(a.studentId)), skill: k ? k.short : a.skillId, result: a.result, attemptNo: r.list.findIndex(x=>x.id===a.id)+1,
-        points: a.sheet ? a.sheet.points : null, total: sh ? SheetKit.sheetTotal(sh) : null, told: !!a.told}; });
+        points: a.sheet ? a.sheet.points : null, total: sh ? SheetKit.sheetTotal(sh) : null, told: !!a.told, skillId: a.skillId,
+        examiner: a.sheet ? a.sheet.examiner : iname(a.instructorId, a.instructorName),
+        sheet: a.sheet ? {marks: a.sheet.marks||{}, critical: a.sheet.critical||[], criticalNotes: a.sheet.criticalNotes||"", notes: a.sheet.notes||"",
+          itemNotes: a.sheet.itemNotes||{}, scenario: a.sheet.scenario||"", activeMs: a.sheet.activeMs!=null ? a.sheet.activeMs : null,
+          pauses: a.sheet.pauses||[], pausedMs: a.sheet.pausedMs||0} : null}; });
 }
 /* Instructors tick "Told" on their screen; apply it here. */
 let toldDocs = [], toldUnsub = null;

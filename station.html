@@ -87,6 +87,18 @@ textarea.txt{min-height:90px;resize:vertical}
 .clockbig{font-family:var(--mono);font-size:34px;font-weight:600;color:var(--accent)}
 .clockbig.stopped{color:var(--ink)}
 details summary{cursor:pointer;margin-bottom:6px}
+.viewbtn{border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:9px;padding:8px 12px;font-weight:700;margin-top:-4px;text-align:left}
+.vscroll{max-height:62vh;overflow:auto;display:grid;gap:8px;padding-right:2px}
+.vrow{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:15px}
+.vrow.miss{border-color:var(--fail);background:var(--fail-soft)}
+.vmk{font-weight:800;width:18px} .vrow.miss .vmk{color:var(--fail)}
+.vpt{font-family:var(--mono);font-weight:600;white-space:nowrap}
+.vsubs{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;margin:4px 0 0 26px}
+.vsubs .n{color:var(--fail);font-weight:600} .vsubs .y{color:var(--muted)}
+.vnote{margin:6px 0 0 26px;font-size:13.5px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:6px;padding:4px 8px}
+.vnote b{color:var(--warn)}
+.vgen{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:8px 10px;white-space:pre-wrap}
+.modal{max-height:92vh;overflow:auto}
 .givecard summary{cursor:pointer;list-style:none}
 .give{display:flex;gap:10px;align-items:center;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px}
 .give.done{opacity:.55}
@@ -303,6 +315,7 @@ function switchLink(){ return `<p class="center"><button class="btn" id="switchC
 document.addEventListener("click", e=>{
   const t = e.target.closest("button"); if(!t || t.disabled) return;
   if(t.dataset.told){ setTold(t.dataset.told); return; }
+  if(t.dataset.view){ viewSheet(t.dataset.view); return; }
   if(t.id==="switchCode"){ store("station-code", null); if(unsubStation) unsubStation(); stationDoc = null; askCode(); return; }
   if(!form) return;
   const sh = sheet();
@@ -370,9 +383,42 @@ function giveHtml(openByDefault){
   const rows = list.map(g=>{ const t = isTold(g); return `<div class="give ${t?"done":""}">
       <div style="flex:1;min-width:0"><div class="gname">${esc(g.studentName)}</div><div class="muted">${esc(g.skill)} · attempt ${g.attemptNo}${g.points!=null?` · ${g.points}/${g.total}`:""}</div></div>
       <span class="gres ${g.result==="P"?"p":"f"}">${g.result==="P"?"PASS":"FAIL"}</span>
-      <button class="toldbtn ${t?"on":""}" data-told="${g.aid}">${t?"✓ Told":"Told"}</button></div>`; }).join("");
+      <button class="toldbtn ${t?"on":""}" data-told="${g.aid}">${t?"✓ Told":"Told"}</button></div>
+      ${g.sheet? `<button class="viewbtn" data-view="${g.aid}">View sheet${missedCount(g)?` · ${missedCount(g)} missed`:""}${(g.sheet.critical||[]).length?` · ${g.sheet.critical.length} critical`:""}</button>` : `<div class="muted" style="font-size:13px;margin-top:-4px">No digital sheet for this one (recorded by the lead instructor).</div>`}`; }).join("");
   return `<details class="card givecard" ${openByDefault||left?"open":""}><summary><h3 style="display:inline">Results to give</h3> <span class="muted">${left? left+" to give" : "all given"}</span></summary>
     <div class="muted">Released by the lead instructor. Tell each candidate their result, then tap Told.</div>${rows}</details>`;
+}
+function missedCount(g){
+  const sh = SKILL_SHEETS[g.skillId]; if(!sh || !g.sheet) return 0;
+  return sh.rows.reduce((n,r,i)=> n + ((r.p||r.subs||r.choose) && SheetKit.rowScore(r,i,g.sheet.marks) < SheetKit.rowMax(r) ? 1 : 0), 0);
+}
+/* Read-only graded sheet, for debriefing the candidate. Missed steps first, then the full sheet. */
+function viewSheet(aid){
+  const g = ((stationDoc && stationDoc.toGive) || []).find(x=>x.aid===aid); if(!g || !g.sheet) return;
+  const sh = SKILL_SHEETS[g.skillId], f = g.sheet, m = f.marks || {};
+  const line = (r,i)=>{
+    const got = SheetKit.rowScore(r,i,m), max = SheetKit.rowMax(r), note = (f.itemNotes||{})[i];
+    let detail = "";
+    if(r.subs) detail = `<div class="vsubs">${r.subs.map((t,j)=>`<span class="${m["r"+i+"."+j]?"y":"n"}">${m["r"+i+"."+j]?"✓":"✗"} ${esc(t)}</span>`).join("")}</div>`;
+    if(r.choose) detail = `<div class="vsubs">${r.opts.map(o=>`<span class="${m["r"+i+"."+o]?"y":"n"}">${m["r"+i+"."+o]?"✓":"–"} ${esc(o)}</span>`).join("")}</div>`;
+    return `<div class="vrow ${got<max?"miss":""}"><div style="display:flex;gap:8px"><span class="vmk">${got===max?"✓":got?"◐":"✗"}</span><span style="flex:1">${esc(r.t)}</span><span class="vpt">${got}/${max}</span></div>${detail}${note?`<div class="vnote"><b>Note:</b> ${esc(note)}</div>`:""}</div>`;
+  };
+  const scored = sh.rows.map((r,i)=>({r,i})).filter(x=>x.r.p||x.r.subs||x.r.choose);
+  const missed = scored.filter(x=>SheetKit.rowScore(x.r,x.i,m) < SheetKit.rowMax(x.r));
+  openSheet(`<div style="display:flex;align-items:center;gap:10px"><div style="flex:1;min-width:0"><div class="big" style="font-size:20px">${esc(g.studentName)}</div>
+      <div class="muted">${esc(sh.code)} · ${esc(sh.title)} · attempt ${g.attemptNo}${f.activeMs!=null?` · ${durText(f.activeMs)}`:""}${f.scenario?` · scenario ${esc(f.scenario)}`:""}</div></div>
+      <div style="text-align:right"><div class="gres ${g.result==="P"?"p":"f"}" style="font-size:18px">${g.result==="P"?"PASS":"FAIL"}</div><div class="vpt" style="font-size:16px">${g.points}/${g.total}</div></div></div>
+    <div class="vscroll">
+      ${(f.critical||[]).length? `<div class="bad" style="font-weight:500"><b>Critical criteria</b><ul style="margin:4px 0 0;padding-left:18px">${f.critical.map(i=>`<li>${esc(sh.critical[i])}</li>`).join("")}</ul>${f.criticalNotes?`<div style="margin-top:4px"><b>Rationale:</b> ${esc(f.criticalNotes)}</div>`:""}</div>`:""}
+      ${f.notes? `<div class="vgen"><b>Notes:</b> ${esc(f.notes)}</div>`:""}
+      ${(f.pauses||[]).length? `<div class="muted">Clock paused ${f.pauses.length}× (${durText(f.pausedMs||0)} not counted)${f.pauses.filter(p=>p.why).length?": "+f.pauses.filter(p=>p.why).map(p=>esc(p.why)).join("; "):""}</div>`:""}
+      <div class="sec">${missed.length? `Missed (${missed.length})` : "No missed steps"}</div>
+      ${missed.map(x=>line(x.r,x.i)).join("")}
+      ${(()=>{ const noted = scored.filter(x=>(f.itemNotes||{})[x.i] && !missed.includes(x)); return noted.length? `<div class="sec">Step notes</div>${noted.map(x=>line(x.r,x.i)).join("")}` : ""; })()}
+      <details><summary class="sec" style="cursor:pointer">Full sheet</summary>${sh.rows.map((r,i)=> r.h? `<div class="sec">${esc(r.h)}</div>` : r.note? "" : line(r,i)).join("")}</details>
+    </div>
+    <button class="btn" id="vClose">Close</button>`);
+  $("vClose").onclick = closeSheet;
 }
 function setTold(aid){
   const list = (stationDoc && stationDoc.toGive) || [], g = list.find(x=>x.aid===aid); if(!g) return;
