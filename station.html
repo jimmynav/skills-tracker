@@ -34,7 +34,19 @@ h1,h2,h3{font-family:var(--display);margin:0}
 .stn{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:32px;padding:0 8px;border-radius:7px;background:var(--ink);color:var(--paper);font-family:var(--display);font-weight:800;font-size:17px}
 .top .who{font-weight:700}
 .top .sk{color:var(--muted);font-size:14px}
+.pausebtn{border:1.5px solid var(--warn);background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:5px 12px;font-weight:700;min-height:36px}
+.pausebtn.on{background:var(--warn);color:#fff}
+.cand{flex-basis:100%;display:flex;gap:8px;align-items:center;font-family:var(--display);font-weight:800;font-size:18px;border-top:1px dashed var(--line);padding-top:6px;margin-top:2px}
+.cand .chip{font-family:var(--body);font-weight:600;font-size:12px}
+.pausedbar{border:1.5px solid var(--warn);background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:10px 12px;font-weight:700}
+.irow{display:flex;gap:6px;align-items:stretch}
+.irow .item{flex:1}
+.nbtn{flex:none;border:1px dashed var(--line);background:transparent;color:var(--muted);border-radius:10px;padding:0 10px;font-size:13px;font-weight:600;min-width:62px}
+.nbtn:disabled{display:none}
+.inote{display:block;width:100%;text-align:left;border:1px solid var(--warn);background:var(--warn-soft);color:var(--ink);border-radius:8px;padding:6px 10px;font-size:14px;margin-top:-2px}
+.inote b{color:var(--warn)}
 .timer{margin-left:auto;font-family:var(--mono);font-weight:600;font-size:20px;padding:3px 10px;border-radius:8px;background:var(--accent-soft);color:var(--accent)}
+.timer.paused{background:var(--warn);color:#fff}
 .timer.near{background:var(--warn-soft);color:var(--warn)} .timer.over{background:var(--fail);color:#fff}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px}
 .big{font-family:var(--display);font-size:24px;font-weight:800}
@@ -91,6 +103,8 @@ details summary{cursor:pointer;margin-bottom:6px}
   <span class="stn" id="tStn">–</span>
   <div><div class="who" id="tWho"></div><div class="sk" id="tSkill"></div></div>
   <span class="timer" id="tTimer" hidden>0:00</span>
+  <button class="pausebtn" id="tPause" hidden>Pause</button>
+  <div class="cand" id="tCand" hidden></div>
 </div></div>
 <main class="wrap" id="app"><div class="card center"><div class="muted">Loading…</div></div></main>
 <div class="bar" id="bar" hidden><div class="in">
@@ -104,6 +118,9 @@ details summary{cursor:pointer;margin-bottom:6px}
 const $ = id => document.getElementById(id);
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function store(k, v){ try{ if(v===undefined) return JSON.parse(localStorage.getItem(k)||"null"); if(v===null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); }catch(e){ return null; } }
+/* Test time with paused stretches removed (equipment problems shouldn't count against the candidate). */
+function pausedMs(f, toMs){ if(!f) return 0; let ms = 0; for(const p of (f.pauses||[])) ms += Date.parse(p.e) - Date.parse(p.s); if(f.pausedAt) ms += (toMs==null? Date.now() : toMs) - Date.parse(f.pausedAt); return Math.max(0, ms); }
+function activeTestMs(f){ if(!f || !f.tStart) return 0; const end = f.tEnd ? Date.parse(f.tEnd) : Date.now(); return Math.max(0, end - Date.parse(f.tStart) - pausedMs(f, end)); }
 function durText(ms){ const t=Math.max(0,Math.floor(ms/1000)), h=Math.floor(t/3600), m=Math.floor(t%3600/60), s=t%60; return (h? h+":"+String(m).padStart(2,"0") : m)+":"+String(s).padStart(2,"0"); }
 
 let db = null, uid = null;
@@ -172,7 +189,7 @@ function saveDraft(){ const k = draftKey(); if(k) store(k, form); }
 function pushStatus(phase){
   const d = stationDoc; if(!d || !d.student) return;
   db.doc("stationStatus/"+code).set({code, cls: d.cls, iid: d.iid, sendId: d.student.sendId, phase,
-    startedAt: form.tStart || null, endedAt: form.tEnd || null, at: new Date().toISOString()}).catch(()=>{});
+    startedAt: form.tStart || null, endedAt: form.tEnd || null, pausedAt: form.pausedAt || null, pausedMs: pausedMs(Object.assign({}, form, {pausedAt:null})), at: new Date().toISOString()}).catch(()=>{});
 }
 function sheet(){ return stationDoc && stationDoc.skillId ? SKILL_SHEETS[stationDoc.skillId] : null; }
 
@@ -186,6 +203,10 @@ function render(){
   $("tSkill").textContent = sh ? `${sh.code} · ${sh.title}` : (d.skillName || "No skill assigned yet");
   const stu = d.student;
   $("tTimer").hidden = !(stu && form && form.tStart);
+  const running = !!(stu && form && form.tStart && !form.tEnd && !(sub && sub.status==="pending"));
+  const pb = $("tPause"); pb.hidden = !running; pb.textContent = form && form.pausedAt ? "Resume" : "Pause"; pb.classList.toggle("on", !!(form && form.pausedAt));
+  const tc = $("tCand"); tc.hidden = !stu;
+  if(stu) tc.innerHTML = `${esc(stu.name)} ${stu.attemptNo>1?`<span class="chip re">Retest ${stu.attemptNo}</span>`:""}${stu.assistantName?`<span class="chip">Asst: ${esc(stu.assistantName)}</span>`:""}`;
   if(d.onBreak && !stu){ $("bar").hidden = true; $("app").innerHTML = `<div class="card center"><div class="big">You're marked “not here”</div><div class="muted">The lead instructor will send students when you're back.</div></div>${switchLink()}`; return; }
   if(!stu){
     $("bar").hidden = true;
@@ -216,13 +237,13 @@ function render(){
   const ended = !!form.tEnd;
   const clockCard = `<div class="card clockcard">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <div><div class="muted">${ended?"Test ended":"Test in progress"}</div><div class="clockbig ${ended?"stopped":""}" id="clockBig">${durText((ended?Date.parse(form.tEnd):Date.now())-Date.parse(form.tStart))}</div></div>
+        <div><div class="muted">${ended?"Test ended":"Test in progress"}</div><div class="clockbig ${ended||form.pausedAt?"stopped":""}" id="clockBig">${durText(activeTestMs(form))}</div></div>
         ${locked? "" : ended ? `<button class="btn" id="undoEnd" style="margin-left:auto">Undo end</button>` : `<button class="btn endbtn" id="endTest" style="margin-left:auto">End test</button>`}
       </div>
+      ${form.pausedAt? `<div class="pausedbar">Clock paused${form.pauseReason?`: ${esc(form.pauseReason)}`:""}. Tap Resume at the top when you're ready.</div>`:""}
+      ${(form.pauses||[]).length? `<div class="muted">Paused ${form.pauses.length}× · ${durText(pausedMs(Object.assign({}, form, {pausedAt:null})))} not counted</div>`:""}
       <details${ended?"":" open"}><summary class="muted">Candidate prompt</summary>${promptHtml}</details></div>`;
   const head = clockCard + `<div class="card">
-      <div class="muted">Candidate</div>
-      <div class="big">${esc(stu.name)}</div>
       <div class="row" style="display:flex;gap:6px;flex-wrap:wrap">${stu.attemptNo>1?`<span class="chip re">Retest · attempt ${stu.attemptNo} of 3</span>`:`<span class="chip">1st attempt</span>`}${stu.assistantName?`<span class="chip">Assistant: ${esc(stu.assistantName)}</span>`:""}${sh.timeLimitMin?`<span class="chip">Time limit ${sh.timeLimitMin} min</span>`:""}</div>
       ${sh.scenario? `<label class="muted" for="scen">Scenario #</label><input class="txt" id="scen" value="${esc(form.scenario)}" ${locked?"disabled":""} inputmode="numeric" style="max-width:160px">`:""}
     </div>`;
@@ -231,11 +252,14 @@ function render(){
   const rows = sh.rows.map((r,i)=>{
     if(r.h) return `<div class="sec">${esc(r.h)}</div>`;
     if(r.note) return `<div class="note">${esc(r.note)}</div>`;
-    if(r.p){ const on = !!form.marks["r"+i]; return `<button class="item ${on?"on":""}" data-k="r${i}" ${locked?"disabled":""}><span class="box">${on?"✓":""}</span><span>${esc(r.t)}</span><span class="pt">${on?r.p:0}/${r.p}</span></button>`; }
+    const n = (form.itemNotes||{})[i];
+    const noteChip = n ? `<button class="inote" data-note="${i}" ${locked?"disabled":""}><b>Note:</b> ${esc(n)}</button>` : "";
+    const noteBtn = n ? "" : `<button class="nbtn" data-note="${i}" ${locked?"disabled":""} aria-label="Add a note to this step">+ Note</button>`;
+    if(r.p){ const on = !!form.marks["r"+i]; return `<div><div class="irow"><button class="item ${on?"on":""}" data-k="r${i}" ${locked?"disabled":""}><span class="box">${on?"✓":""}</span><span>${esc(r.t)}</span><span class="pt">${on?r.p:0}/${r.p}</span></button>${noteBtn}</div>${noteChip}</div>`; }
     const got = SheetKit.rowScore(r,i,form.marks), max = SheetKit.rowMax(r);
     const opts = r.subs ? r.subs.map((t,j)=>({k:"r"+i+"."+j, t})) : r.opts.map(o=>({k:"r"+i+"."+o, t:o}));
-    return `<div class="group"><div class="gt"><span>${esc(r.t)}${r.choose?` <span class="muted">(up to ${r.choose})</span>`:""}</span><span class="pt">${got}/${max}</span></div>
-      <div class="subs">${opts.map(o=>`<button class="sub ${form.marks[o.k]?"on":""}" data-k="${esc(o.k)}" ${locked?"disabled":""}>${esc(o.t)}</button>`).join("")}</div></div>`;
+    return `<div class="group"><div class="gt"><span>${esc(r.t)}${r.choose?` <span class="muted">(up to ${r.choose})</span>`:""}</span><span class="pt">${got}/${max}</span>${noteBtn.replace('class="nbtn"','class="nbtn" style="min-height:32px"')}</div>
+      <div class="subs">${opts.map(o=>`<button class="sub ${form.marks[o.k]?"on":""}" data-k="${esc(o.k)}" ${locked?"disabled":""}>${esc(o.t)}</button>`).join("")}</div>${noteChip}</div>`;
   }).join("");
   const crit = sh.critical.map((c,i)=>{ const on = form.critical.includes(i); return `<button class="crit ${on?"on":""}" data-c="${i}" ${locked?"disabled":""}><span class="box">${on?"✕":""}</span><span>${esc(c)}</span></button>`; }).join("");
   const critOn = form.critical.length>0;
@@ -249,7 +273,7 @@ function render(){
     </div>`;
   $("bar").hidden = false;
   $("bScore").textContent = SheetKit.sheetScore(sh, form.marks) + " / " + SheetKit.sheetTotal(sh);
-  const eb = $("endTest"); if(eb) eb.onclick = ()=>{ form.tEnd = new Date().toISOString(); saveDraft(); pushStatus("ended"); render(); };
+  const eb = $("endTest"); if(eb) eb.onclick = ()=>{ closePause(); form.tEnd = new Date().toISOString(); saveDraft(); pushStatus("ended"); render(); };
   const ub = $("undoEnd"); if(ub) ub.onclick = ()=>{ form.tEnd = null; saveDraft(); pushStatus("running"); render(); };
   $("bSubmit").disabled = locked;
   $("bSubmit").textContent = locked ? "Submitted" : returned ? "Resubmit sheet" : "Submit sheet";
@@ -263,6 +287,8 @@ document.addEventListener("click", e=>{
   if(t.id==="switchCode"){ store("station-code", null); if(unsubStation) unsubStation(); stationDoc = null; askCode(); return; }
   if(!form) return;
   const sh = sheet();
+  if(t.id==="tPause"){ if(form.pausedAt){ closePause(); saveDraft(); pushStatus("running"); render(); } else askPause(); return; }
+  if(t.dataset.note!=null){ editNote(Number(t.dataset.note)); return; }
   if(t.dataset.k){
     const k = t.dataset.k;
     const ri = Number(k.slice(1).split(".")[0]), r = sh.rows[ri];
@@ -288,9 +314,9 @@ $("bSubmit").onclick = ()=>{
   if(!form.result){ flash("Choose PASS or FAIL first."); return; }
   if(form.critical.length && !form.criticalNotes.trim()){ flash("Document your rationale for the checked critical criteria."); const c=$("critNotes"); if(c) c.focus(); return; }
   const pts = SheetKit.sheetScore(sh, form.marks), tot = SheetKit.sheetTotal(sh);
-  if(!form.tEnd){ form.tEnd = new Date().toISOString(); saveDraft(); pushStatus("ended"); render(); }
+  if(!form.tEnd){ closePause(); form.tEnd = new Date().toISOString(); saveDraft(); pushStatus("ended"); render(); }
   openSheet(`<h2>Submit this sheet?</h2>
-    <div class="muted">Test time ${durText(Date.parse(form.tEnd)-Date.parse(form.tStart))}</div>
+    <div class="muted">Test time ${durText(activeTestMs(form))}${(form.pauses||[]).length?` (clock paused ${durText(pausedMs(form))}, not counted)`:""}</div>
     <div><b>${esc(stationDoc.student.name)}</b> · ${esc(sh.title)}</div>
     <div class="big">${form.result==="P"?"PASS":"FAIL"} · ${pts}/${tot}</div>
     ${form.critical.length? `<div class="bad">${form.critical.length} critical criteri${form.critical.length>1?"a":"on"} checked</div>`:""}
@@ -305,7 +331,7 @@ async function submit(){
   const body = {code, uid, cls: d.cls, iid: d.iid, examiner: d.instructorName, studentId: stu.id, studentName: stu.name, skillId: d.skillId,
     sendId: stu.sendId, attemptNo: stu.attemptNo, assistantName: stu.assistantName || null,
     marks: form.marks, critical: form.critical, criticalNotes: form.criticalNotes || "", notes: form.notes || "", scenario: form.scenario || "",
-    points: SheetKit.sheetScore(sh, form.marks), result: form.result, startedAt: form.tStart || stu.startedAt || null, endedAt: form.tEnd || new Date().toISOString(), calledAt: stu.startedAt || null,
+    points: SheetKit.sheetScore(sh, form.marks), result: form.result, startedAt: form.tStart || stu.startedAt || null, endedAt: form.tEnd || new Date().toISOString(), calledAt: stu.startedAt || null, pauses: form.pauses || [], pausedMs: pausedMs(form), activeMs: activeTestMs(form), itemNotes: form.itemNotes || {},
     submittedAt: new Date().toISOString(), status: "pending"};
   try{
     if(sub && sub.status==="returned"){ await db.collection("submissions").doc(sub.id).set(Object.assign({}, body, {returnNote: sub.returnNote||"", resubmitted: true})); }
@@ -313,6 +339,29 @@ async function submit(){
     form._submitted = true; saveDraft(); pushStatus("submitted");
     closeSheet(); render();
   }catch(e){ closeSheet(); flash("Couldn't submit. Check the Wi-Fi and try again. Your sheet is saved on this device."); }
+}
+
+/* ---------- pause + step notes ---------- */
+function closePause(){ if(form && form.pausedAt){ form.pauses = (form.pauses||[]).concat([{s: form.pausedAt, e: new Date().toISOString(), why: form.pauseReason || ""}]); form.pausedAt = null; form.pauseReason = ""; } }
+function askPause(){
+  openSheet(`<h2>Pause the clock?</h2>
+    <div class="muted">For problems that aren't the candidate's fault, like equipment malfunction. Paused time isn't counted and is noted on the sheet.</div>
+    <input class="txt" id="pWhy" placeholder="Reason (optional), e.g. AED trainer battery died" maxlength="120">
+    <div style="display:flex;gap:10px"><button class="btn" id="pNo" style="flex:1">Cancel</button><button class="btn primary" id="pGo" style="flex:1">Pause clock</button></div>`);
+  $("pNo").onclick = closeSheet;
+  $("pGo").onclick = ()=>{ form.pausedAt = new Date().toISOString(); form.pauseReason = $("pWhy").value.trim(); saveDraft(); pushStatus("paused"); closeSheet(); render(); };
+}
+function editNote(i){
+  const sh = sheet(), r = sh.rows[i]; if(!r) return;
+  const cur = (form.itemNotes||{})[i] || "";
+  openSheet(`<h2>Note</h2><div class="muted">${esc(r.t)}</div>
+    <textarea class="txt" id="nTxt" maxlength="400" placeholder="e.g. Student said goggles but no gloves">${esc(cur)}</textarea>
+    <div style="display:flex;gap:10px">${cur?`<button class="btn" id="nDel">Delete</button>`:""}<button class="btn" id="nNo" style="flex:1">Cancel</button><button class="btn primary" id="nGo" style="flex:1">Save note</button></div>`);
+  setTimeout(()=>{ const t=$("nTxt"); if(t){ t.focus(); t.setSelectionRange(t.value.length,t.value.length); } }, 50);
+  $("nNo").onclick = closeSheet;
+  const save = v => { form.itemNotes = Object.assign({}, form.itemNotes); if(v) form.itemNotes[i] = v; else delete form.itemNotes[i]; saveDraft(); closeSheet(); render(); };
+  $("nGo").onclick = ()=>save($("nTxt").value.trim());
+  if(cur) $("nDel").onclick = ()=>save("");
 }
 
 /* ---------- small UI helpers ---------- */
@@ -325,7 +374,8 @@ function tick(){
   const d = stationDoc; const el = $("tTimer");
   if(!d || !d.student || !form || !form.tStart){ el.hidden = true; return; }
   el.hidden = false;
-  const ms = (form.tEnd ? Date.parse(form.tEnd) : Date.now()) - Date.parse(form.tStart), sh = sheet();
+  const ms = activeTestMs(form), sh = sheet();
+  el.classList.toggle("paused", !!form.pausedAt);
   el.textContent = durText(ms);
   const big = $("clockBig"); if(big) big.textContent = durText(ms);
   el.classList.toggle("near", !!(sh && sh.timeLimitMin && ms >= (sh.timeLimitMin-2)*60000 && ms < sh.timeLimitMin*60000));

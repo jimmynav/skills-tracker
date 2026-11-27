@@ -78,6 +78,8 @@ nav.tabs button[aria-selected="true"]{background:var(--accent-soft);color:var(--
 .sheetview .r .pt{margin-left:auto;font-family:var(--mono);font-weight:600;white-space:nowrap}
 .sheetview .h{font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:6px}
 .sheetview .miss{color:var(--fail)}
+.inote-v{font-size:12.5px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:6px;padding:2px 8px;margin-top:3px;color:var(--ink)}
+.inote-v b{color:var(--warn)}
 .sheetview .subs{font-size:12px;color:var(--muted)}
 .savestate{font-size:12px;color:var(--muted);min-width:70px;text-align:right}
 .savestate.bad{color:var(--fail);font-weight:600}
@@ -858,7 +860,8 @@ async function recordResult(iid, result, extra){
   const a = Object.assign({id: uid("a"), studentId: st.studentId, skillId: st.skillId, instructorId: iid,
              instructorName: iname(iid), result, at: new Date().toISOString(), startedAt: st.startedAt || null, override: st.override || null, assistantId: st.assistantId || null, sendId: st.sendId || null}, extra||{});
   attempts.push(a);
-  st.lastDur = (a.sheet && a.sheet.startedAt && a.sheet.endedAt) ? Math.max(0, Date.parse(a.sheet.endedAt) - Date.parse(a.sheet.startedAt))
+  st.lastDur = (a.sheet && a.sheet.activeMs != null) ? a.sheet.activeMs
+    : (a.sheet && a.sheet.startedAt && a.sheet.endedAt) ? Math.max(0, Date.parse(a.sheet.endedAt) - Date.parse(a.sheet.startedAt))
     : st.startedAt ? activeMs(st.startedAt, Date.parse(a.at)) : null;
   st.lastPair = a.assistantId ? {main: a.studentId, asst: a.assistantId, skillId: a.skillId} : null;
   st.studentId = null; st.startedAt = null; st.override = null; st.assistantId = null; st.sendId = null;
@@ -2102,8 +2105,10 @@ function stationClock(iid){
   const st = live.stations[iid] || {}, x = statusFor(iid);
   if(!st.code || !x) return timerHtml(st.startedAt);   // no instructor screen in use: clock from Send, as before
   if(x.phase==="called") return `<span class="timer num called" title="Instructor is calling the student. Clock starts when they tap Start.">Calling</span>`;
-  if(x.phase==="running" && x.startedAt) return timerHtml(x.startedAt);
-  if((x.phase==="ended" || x.phase==="submitted") && x.startedAt && x.endedAt) return `<span class="timer num stopped" title="Test ended, instructor is finishing the sheet">${durText(Date.parse(x.endedAt)-Date.parse(x.startedAt))}${x.phase==="ended"?" · grading":""}</span>`;
+  const pm = x.pausedMs || 0;
+  if(x.phase==="paused" && x.startedAt) return `<span class="timer num called" title="Instructor paused the clock (equipment problem)">Paused · ${durText(Date.parse(x.pausedAt||x.at) - Date.parse(x.startedAt) - pm)}</span>`;
+  if(x.phase==="running" && x.startedAt) return timerHtml(new Date(Date.parse(x.startedAt) + pm).toISOString());
+  if((x.phase==="ended" || x.phase==="submitted") && x.startedAt && x.endedAt) return `<span class="timer num stopped" title="Test ended, instructor is finishing the sheet">${durText(Date.parse(x.endedAt)-Date.parse(x.startedAt)-pm)}${x.phase==="ended"?" · grading":""}</span>`;
   return timerHtml(st.startedAt);
 }
 /* ---------- candidate prompts (shared by all labs) ---------- */
@@ -2151,7 +2156,8 @@ function sheetViewHtml(sh, x){
     let sub = "";
     if(r.subs) sub = `<div class="subs">${r.subs.map((t,j)=>`${marks["r"+i+"."+j]?"✓":"<span class='miss'>✗</span>"} ${esc(t)}`).join(" · ")}</div>`;
     if(r.choose) sub = `<div class="subs">${r.opts.filter(o=>marks["r"+i+"."+o]).map(esc).join(" · ")||"none"}</div>`;
-    return `<div class="r"><span class="${got<max?"miss":""}">${got===max?"✓":got?"◐":"✗"}</span><span>${esc(r.t)}${sub}</span><span class="pt">${got}/${max}</span></div>`;
+    const note = (x.itemNotes||{})[i];
+    return `<div class="r"><span class="${got<max?"miss":""}">${got===max?"✓":got?"◐":"✗"}</span><span>${esc(r.t)}${sub}${note?`<div class="inote-v"><b>Note:</b> ${esc(note)}</div>`:""}</span><span class="pt">${got}/${max}</span></div>`;
   }).join("");
   return `<div class="sheetview">${rows}</div>`;
 }
@@ -2162,7 +2168,8 @@ function openReview(subId){
   openModal(`<div class="row"><h2>Review sheet</h2><button class="btn small x" data-act="close">Close</button></div>
     <div class="row" style="gap:14px"><div><div style="font-size:18px;font-weight:700">${esc(x.studentName)}</div>
       <div class="why">${esc(sh?sh.code+" · "+sh.title:x.skillId)} · attempt ${x.attemptNo||"?"} · examiner ${esc(x.examiner)}${x.assistantName?` · assistant ${esc(x.assistantName)}`:""}</div>
-      <div class="why">${esc(fmtTime(x.startedAt))} → ${esc(fmtTime(x.endedAt))}${x.scenario?` · scenario ${esc(x.scenario)}`:""}</div></div>
+      <div class="why">${esc(fmtTime(x.startedAt))} → ${esc(fmtTime(x.endedAt))}${x.activeMs!=null?` · test time ${durText(x.activeMs)}`:""}${x.scenario?` · scenario ${esc(x.scenario)}`:""}</div>
+      ${(x.pauses||[]).length? `<div class="why" style="color:var(--warn);font-weight:600">Clock paused ${x.pauses.length}× (${durText(x.pausedMs||0)} not counted)${x.pauses.filter(p=>p.why).length?": "+x.pauses.filter(p=>p.why).map(p=>esc(p.why)).join("; "):""}</div>`:""}</div>
       <div style="margin-left:auto;text-align:right"><div style="font-size:26px;font-weight:800;font-family:var(--display)">${x.points}/${total}</div>
       <div class="gres ${x.result==="P"?"p":"f"}" style="font-size:15px">${x.result==="P"?"PASS":"FAIL"}</div></div></div>
     ${(x.critical||[]).length? `<div class="notebar" style="border-color:var(--fail);background:var(--fail-soft)"><div><b style="color:var(--fail)">Critical criteria checked</b><ul style="margin:4px 0;padding-left:18px">${x.critical.map(i=>`<li>${esc(sh.critical[i])}</li>`).join("")}</ul>${x.criticalNotes?`<div><b>Rationale:</b> ${esc(x.criticalNotes)}</div>`:""}</div></div>`:""}
@@ -2180,7 +2187,8 @@ function openReview(subId){
 function sheetFromSub(x, res){
   return {marks: x.marks||{}, critical: x.critical||[], criticalNotes: x.criticalNotes||"", notes: x.notes||"", scenario: x.scenario||"",
     points: x.points, examiner: x.examiner, startedAt: x.startedAt||null, endedAt: x.endedAt||null, submittedAt: x.submittedAt||null,
-    approvedAt: new Date().toISOString(), submittedResult: x.result, sheetCode: (SKILL_SHEETS[x.skillId]||{}).code || null};
+    approvedAt: new Date().toISOString(), submittedResult: x.result, sheetCode: (SKILL_SHEETS[x.skillId]||{}).code || null,
+    pauses: x.pauses || [], pausedMs: x.pausedMs || 0, activeMs: x.activeMs != null ? x.activeMs : null, itemNotes: x.itemNotes || {}};
 }
 async function approveSub(subId, res){
   if(!guard()) return;

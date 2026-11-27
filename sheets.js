@@ -360,6 +360,7 @@ function sheetScore(sheet, marks){ return sheet.rows.reduce((n,r,i)=>n+rowScore(
 
 /* Printable copy laid out like the paper form. */
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function durTxt(ms){ const t=Math.max(0,Math.floor(ms/1000)); return Math.floor(t/60)+":"+String(t%60).padStart(2,"0"); }
 function fmtClock(iso){ return iso ? new Date(iso).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}) : "__________"; }
 function printHtml(sheet, f){
   const marks = f.marks || {};
@@ -370,7 +371,8 @@ function printHtml(sheet, f){
     if(r.subs) detail = `<div class="subs">${r.subs.map((s,j)=>`<span>${marks["r"+i+"."+j]?"☑":"☐"} ${esc(s)}</span>`).join("")}</div>`;
     if(r.choose) detail = `<div class="subs">${r.opts.map(o=>`<span>${marks["r"+i+"."+o]?"☑":"☐"} ${esc(o)}</span>`).join("")}</div>`;
     const mark = r.p ? (marks["r"+i]?"☑ ":"☐ ") : "";
-    return `<tr><td>${mark}${esc(r.t)}${detail}</td><td class="n">${rowMax(r)}</td><td class="n aw">${rowScore(r,i,marks)}</td></tr>`;
+    const note = (f.itemNotes||{})[i];
+    return `<tr><td>${mark}${esc(r.t)}${detail}${note?`<div class="inote">Note: ${esc(note)}</div>`:""}</td><td class="n">${rowMax(r)}</td><td class="n aw">${rowScore(r,i,marks)}</td></tr>`;
   }).join("");
   const crit = sheet.critical.map((c,i)=>`<li>${(f.critical||[]).includes(i)?"<b>☒</b>":"☐"} ${esc(c)}</li>`).join("");
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(sheet.code)} ${esc(f.studentName||"")}</title><style>
@@ -385,6 +387,7 @@ function printHtml(sheet, f){
     .tot td{font-weight:bold} ul{list-style:none;padding:0;margin:4px 0} li{margin:2px 0}
     .box{border:1px solid #000;padding:6px;min-height:40px;white-space:pre-wrap;margin-top:4px}
     .res{font-size:14px;font-weight:bold;margin:10px 0}
+    .inote{font-size:11px;font-style:italic;margin-top:2px;border-left:2px solid #000;padding-left:6px}
     .foot{font-size:9px;margin-top:12px;color:#333}
     @media print{body{margin:10mm}}
   </style></head><body>
@@ -395,6 +398,7 @@ function printHtml(sheet, f){
       <div>Date: ${esc(f.startedAt? new Date(f.startedAt).toLocaleDateString() : "")}</div><div>Attempt: ${esc(f.attemptNo||"")}${f.assistantName?` · Assistant: ${esc(f.assistantName)}`:""}</div>
       ${sheet.scenario?`<div>Scenario #: ${esc(f.scenario||"")}</div><div></div>`:""}
       <div>Actual Time Started: ${fmtClock(f.startedAt)}</div><div>Actual Time Ended: ${fmtClock(f.endedAt)}</div>
+      ${f.activeMs!=null?`<div>Test time: ${durTxt(f.activeMs)}</div><div>${(f.pauses||[]).length?`Clock paused ${f.pauses.length}× (${durTxt(f.pausedMs||0)} not counted)${f.pauses.filter(p=>p.why).length?": "+f.pauses.filter(p=>p.why).map(p=>esc(p.why)).join("; "):""}`:""}</div>`:""}
     </div>
     <table><tr><th></th><th>Possible Points</th><th>Points Awarded</th></tr>${rows}
       <tr class="tot"><td style="text-align:right">TOTAL</td><td class="n">${sheetTotal(sheet)}</td><td class="n">${sheetScore(sheet, marks)}</td></tr></table>
