@@ -736,7 +736,9 @@ function skillDemand(k){
 const queues = {};
 let pending = 0;
 function setSave(text, bad){ const el=$("saveState"); el.textContent=text; el.classList.toggle("bad", !!bad); }
+let swapping = false;   // true while Replace everything swaps the data: no automatic writes
 function enqueue(key, fn){
+  if(swapping) return Promise.resolve();
   pending++; setSave("Saving…");
   const run = (queues[key]||Promise.resolve()).then(fn);
   queues[key] = run.catch(()=>{});
@@ -1744,9 +1746,10 @@ function renderSetup(){
     <div class="card"><h2>Instructor screens</h2>
       <p class="hint">Instructors grade on their own device at <b>${esc(stationUrl())}</b> with a station code. No account needed. They only see the student you send them, and every sheet waits for your approval.</p>
       <div class="row"><button class="btn primary" data-act="codes">Show station codes</button></div></div>
-    <div class="card"><h2>Import from the old tracker</h2>
-      <p class="hint">One-time move of students, results, instructors and history from the Claude-hosted tracker. Choose the export file Claude gave you.</p>
-      <div class="row"><input type="file" id="importFile" accept=".json,application/json"></div></div>
+    <div class="card"><h2>Move data in</h2>
+      <p class="hint">In the old Claude tracker, go to Results → Export for move → Copy text. Paste it here, then click <b>Replace everything</b>. This deletes everything currently in this tracker (both labs, instructors, stats history, station codes and sheets) and replaces it with the pasted data.</p>
+      <textarea class="txt" id="moveIn" placeholder="Paste the copied text here" style="width:100%;height:90px;font:11px monospace"></textarea>
+      <div class="row" style="margin-top:8px"><button class="btn danger" data-act="moveIn">Replace everything</button><span class="hint" id="moveInfo"></span></div></div>
     <div class="card danger-zone"><h2>Clear ${esc(className(cls))} for next semester</h2>
       <p class="hint">Deletes every student, test result and station note in ${esc(className(cls))}. Instructor stats are saved to the all-time history first. Other classes aren't touched. Instructors, skills and the floor layout stay. This can't be undone, so copy your results from the Results tab first.</p>
       <div class="row"><input class="txt" id="clearTxt" placeholder="Type CLEAR to confirm" style="max-width:240px" autocomplete="off"><button class="btn danger" data-act="clear">Clear semester data</button></div></div>`;
@@ -1927,6 +1930,14 @@ document.addEventListener("click", e=>{
       });
     }
     if(act==="driveExport") return openDriveExport();
+    if(act==="moveIn"){
+      const docs = parseMove(($("moveIn")||{}).value||"");
+      if(!docs){ toast("That doesn't look like text from Export for move. Copy it again from the old tracker.", {bad:true}); return; }
+      const labs = (docs["app/classes"].list||[]).map(c=>c.name).join(" and ");
+      const nAtt = Object.keys(docs).filter(p=>/\/attempts\//.test(p)).length;
+      const nStu = (docs["app/classes"].list||[]).reduce((n,c)=>n+(((docs["classes/"+c.id]||{}).students)||[]).length, 0);
+      return confirmBox("Replace everything?", `Deletes all data in this tracker, then moves in <b>${esc(labs)}</b>: ${nStu} students and ${nAtt} results. This can't be undone.`, "Replace everything", ()=>replaceEverything(docs));
+    }
     if(act==="copyRoster") return copyText(rosterTable(), "Student summary");
     if(act==="copyLog") return copyText(logTable(), "Attempt log");
     if(act==="addins"){ if(!guard()) return; const v=$("newIns").value.trim(); if(!v) return; if(!sharedIns){ toast("Still loading instructors. Try again in a moment."); return; }
@@ -2079,6 +2090,7 @@ function codePayload(iid){
       assistantName: st.assistantId ? sname(student(st.assistantId)) : null} : null};
 }
 async function syncCodes(){
+  if(swapping) return;
   if(!db || !writable || !cls) return;
   for(const [iid, st] of Object.entries(live.stations||{})){
     if(!st || !st.code || !instructor(iid)) continue;
@@ -2499,6 +2511,42 @@ async function runDriveExport(){
 }
 
 /* ---------- moving data over from the Claude-hosted tracker ---------- */
+function parseMove(text){
+  let data; try{ data = JSON.parse(text); }catch(e){ return null; }
+  const docs = data && data.docs; if(!docs || typeof docs!=="object" || !docs["app/classes"]) return null;
+  return docs;
+}
+async function wipeAll(){
+  const paths = new Set(["app/classes","app/instructors","app/history","app/prompts","app/driveExport"]);
+  for(const c of classes){ paths.add(P.cfg(c.id)); paths.add(P.live(c.id));
+    const q = await retry(()=>db.collection(P.att(c.id)).get()); q.docs.forEach(x=>paths.add(P.att(c.id)+"/"+x.id)); }
+  for(const col of ["stationCodes","stationStatus","stationTold","submissions"]){
+    try{ const q = await retry(()=>db.collection(col).get()); q.docs.forEach(x=>paths.add(col+"/"+x.id)); }catch(e){} }
+  const list = [...paths]; let bad = 0;
+  for(let i=0;i<list.length;i+=10){ const r = await Promise.allSettled(list.slice(i,i+10).map(p=>retry(()=>db.doc(p).delete()))); bad += r.filter(x=>x.status==="rejected").length; }
+  if(bad) throw new Error(bad+" items couldn't be deleted");
+}
+async function replaceEverything(docs){
+  if(!guard()) return;
+  swapping = true;   // stop live updates and automatic writes while swapping data
+  for(const u of [indexUnsub, sharedSub, historySub, promptsSub, statusUnsub, toldUnsub, subsUnsub, ...unsubs]) if(typeof u==="function"){ try{ u(); }catch(e){} }
+  unsubs = [];
+  setSave("Clearing test data…");
+  try{ await wipeAll(); }catch(e){ setSave("Not saved", true); toast("Couldn't clear the old data, so nothing was imported. Reload and try again.", {bad:true}); return; }
+  setSave("Moving data in…");
+  const paths = Object.keys(docs); let n=0, bad=0;
+  // labs list last, so a half-finished move never points at labs that aren't there yet
+  paths.sort((a,b)=> (a==="app/classes") - (b==="app/classes"));
+  for(let i=0;i<paths.length;i+=10){
+    const r = await Promise.allSettled(paths.slice(i,i+10).map(p=>retry(()=>db.doc(p).set(docs[p]))));
+    r.forEach(x=> x.status==="fulfilled" ? n++ : bad++);
+    setSave(`Moving data in… ${n}/${paths.length}`);
+  }
+  if(bad){ setSave("Not saved", true); toast(`${bad} of ${paths.length} items didn't save. Paste and Replace everything again.`, {bad:true}); return; }
+  setSave("All saved"); toast(`Moved ${n} items. Reloading…`);
+  try{ localStorage.removeItem("skills-class"); }catch(e){}
+  setTimeout(()=>location.reload(), 1200);
+}
 async function importData(file){
   if(!guard()) return;
   let data;
@@ -2558,6 +2606,7 @@ function openClass(id){
 /* First run with classes: move the original single-class data into "Morning lab" and create "Night lab". */
 let migrating = false;
 async function createClasses(){
+  if(swapping) return;
   if(migrating) return; migrating = true;
   setSave("Setting up classes…");
   try{
@@ -2584,6 +2633,7 @@ function subscribeShared(){
   }, onErr);
 }
 async function buildShared(){
+  if(swapping) return;
   if(buildingShared) return; buildingShared = true;
   try{
     const list = [], byId = {}, byName = {};
@@ -2630,10 +2680,12 @@ async function boot(){
     startData();
   });
 }
+let indexUnsub = null;
 function startData(){
   writable = true;
   loadTimer = setTimeout(()=>{ if(!classes.length){ setSave("Can't reach data", true); showBanner("Can't reach the saved data yet. Check your connection. The page will update as soon as it connects."); } }, 10000);
-  db.doc(P.index()).onSnapshot(snap=>{
+  indexUnsub = db.doc(P.index()).onSnapshot(snap=>{
+    if(swapping) return;
     if(snap.exists){
       classes = clone(snap.data().list || []);
       let want = cls;
@@ -2649,7 +2701,7 @@ function startData(){
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127073243";
+const BUILD = "20261127074400";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{
