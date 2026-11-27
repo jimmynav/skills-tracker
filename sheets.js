@@ -411,6 +411,27 @@ function printHtml(sheet, f){
   </body></html>`;
 }
 
+/* The same sheet as a fragment for a Google Doc: inline styles only (Docs drops <style> blocks on import). */
+function docFragment(sheet, f){
+  const marks = f.marks || {};
+  const td = 'style="border:1px solid #999;padding:3px 6px;vertical-align:top"';
+  const tdn = 'style="border:1px solid #999;padding:3px 6px;text-align:center;width:60px"';
+  const rows = sheet.rows.map((r,i)=>{
+    if(r.h) return `<tr><td colspan="3" style="border:1px solid #999;padding:3px 6px;background:#eeeeee"><b>${esc(r.h.toUpperCase())}</b></td></tr>`;
+    if(r.note) return `<tr><td colspan="3" ${td}><i>NOTE: ${esc(r.note)}</i></td></tr>`;
+    let detail = "";
+    if(r.subs) detail = "<br>" + r.subs.map((x,j)=>`${marks["r"+i+"."+j]?"☑":"☐"} ${esc(x)}`).join("&nbsp;&nbsp; ");
+    if(r.choose) detail = "<br>" + r.opts.map(o=>`${marks["r"+i+"."+o]?"☑":"☐"} ${esc(o)}`).join("&nbsp;&nbsp; ");
+    const mark = r.p ? (marks["r"+i]?"☑ ":"☐ ") : "";
+    const note = (f.itemNotes||{})[i];
+    return `<tr><td ${td}>${mark}${esc(r.t)}${detail}${note?`<br><i>Note: ${esc(note)}</i>`:""}</td><td ${tdn}>${rowMax(r)}</td><td ${tdn}><b>${rowScore(r,i,marks)}</b></td></tr>`;
+  }).join("");
+  const crit = sheet.critical.map((c,i)=>`${(f.critical||[]).includes(i)?"☒ <b>"+esc(c)+"</b>":"☐ "+esc(c)}`).join("<br>");
+  return `<table style="border-collapse:collapse;width:100%"><tr><th ${td}></th><th ${tdn}>Possible</th><th ${tdn}>Awarded</th></tr>${rows}
+      <tr><td ${td} style="text-align:right"><b>TOTAL</b></td><td ${tdn}><b>${sheetTotal(sheet)}</b></td><td ${tdn}><b>${sheetScore(sheet, marks)}</b></td></tr></table>
+    <p><b>Critical criteria</b><br>${crit}</p>`;
+}
+
 window.SKILL_SHEETS = SHEETS;
-window.SheetKit = {rowMax, rowScore, sheetTotal, sheetScore, printHtml};
+window.SheetKit = {rowMax, rowScore, sheetTotal, sheetScore, printHtml, docFragment};
 })();

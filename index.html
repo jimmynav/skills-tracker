@@ -1655,8 +1655,8 @@ function renderResults(){
       <p class="hint">First-attempt pass rate with the number of tests in brackets. Compare down a column: same skill, different instructors. Faded cells have under ${MIN_N} tests.</p>
       <div class="tablewrap"><table class="plain"><thead><tr><th>Instructor</th>${sk.map(k=>`<th style="text-align:center" title="${esc(k.name)}">${esc(k.short)}</th>`).join("")}</tr></thead><tbody>${gridRows}${anyIns? avgRow : `<tr><td colspan="${sk.length+1}" class="why">No results yet.</td></tr>`}</tbody></table></div></div>
     <div class="card"><h2>Export</h2>
-      <p class="hint">Copies a spreadsheet-ready table you can paste into Google Sheets or Excel. Export before you clear the semester.</p>
-      <div class="row"><button class="btn primary" data-act="copyRoster">Copy student summary</button><button class="btn" data-act="copyLog">Copy full attempt log</button></div></div>`;
+      <p class="hint">Save every student's record to Google Drive (a folder per semester and lab, one Doc per student), or copy a table to paste into a spreadsheet. Export before you clear the semester.</p>
+      <div class="row"><button class="btn primary" data-act="driveExport">Export to Google Drive</button><button class="btn" data-act="copyRoster">Copy student summary</button><button class="btn" data-act="copyLog">Copy full attempt log</button></div></div>`;
 }
 function tsv(rows){ return rows.map(r=>r.map(c=>String(c==null?"":c).replace(/[\t\n]/g," ")).join("\t")).join("\n"); }
 function rosterTable(){
@@ -1926,6 +1926,7 @@ document.addEventListener("click", e=>{
         if(!guard()) return; attempts = attempts.filter(x=>x.id!==at.id); renderAll(); deleteAttempt(at.id).catch(()=>{}); openStudent(sid);
       });
     }
+    if(act==="driveExport") return openDriveExport();
     if(act==="copyRoster") return copyText(rosterTable(), "Student summary");
     if(act==="copyLog") return copyText(logTable(), "Attempt log");
     if(act==="addins"){ if(!guard()) return; const v=$("newIns").value.trim(); if(!v) return; if(!sharedIns){ toast("Still loading instructors. Try again in a moment."); return; }
@@ -2338,6 +2339,179 @@ function printAttempt(aid){
     examiner: a.sheet.examiner || iname(a.instructorId, a.instructorName), assistantName: a.assistantId ? sname(student(a.assistantId)) : ""}));
 }
 
+/* ---------- export to Google Drive: Semester / Lab / one Google Doc per student ---------- */
+const DRIVE = "https://www.googleapis.com/drive/v3/files", DRIVE_UP = "https://www.googleapis.com/upload/drive/v3/files";
+const FOLDER = "application/vnd.google-apps.folder", GDOC = "application/vnd.google-apps.document";
+let driveTok = null;     // {token, exp}
+async function driveToken(force){
+  if(window.__testDriveToken) return window.__testDriveToken;
+  if(!force && driveTok && Date.now() < driveTok.exp) return driveTok.token;
+  const prov = new firebase.auth.GoogleAuthProvider();
+  prov.addScope("https://www.googleapis.com/auth/drive.file");   // only files this tracker creates
+  const u = firebase.auth().currentUser;
+  if(u && u.email) prov.setCustomParameters({login_hint: u.email});
+  const r = await u.reauthenticateWithPopup(prov);
+  const t = r && r.credential && r.credential.accessToken;
+  if(!t) throw new Error("no-token");
+  driveTok = {token: t, exp: Date.now() + 50*60*1000};
+  return t;
+}
+class DriveErr extends Error{ constructor(status, reason, msg){ super(msg||reason||("HTTP "+status)); this.status=status; this.reason=reason; } }
+async function driveFetch(url, opt, retried){
+  const tok = await driveToken();
+  const res = await fetch(url, Object.assign({}, opt, {headers: Object.assign({Authorization: "Bearer "+tok}, (opt&&opt.headers)||{})}));
+  if(res.status===401 && !retried){ driveTok = null; await driveToken(true); return driveFetch(url, opt, true); }
+  if((res.status===429 || res.status>=500) && !retried){ await new Promise(r=>setTimeout(r, 1500)); return driveFetch(url, opt, true); }
+  if(!res.ok){ let reason="", msg=""; try{ const j = await res.json(); const e = j.error||{}; msg = e.message||""; reason = (e.errors&&e.errors[0]&&e.errors[0].reason) || e.status || ""; }catch(e){} throw new DriveErr(res.status, reason, msg); }
+  return res.status===204 ? null : res.json();
+}
+const qstr = v => "'" + String(v).replace(/\\/g,"\\\\").replace(/'/g,"\\'") + "'";
+async function driveFind(name, parent, mime){
+  const q = `name = ${qstr(name)} and ${qstr(parent)} in parents and mimeType = ${qstr(mime)} and trashed = false`;
+  const j = await driveFetch(`${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id,name,webViewLink)&spaces=drive&pageSize=10`);
+  return (j.files||[])[0] || null;
+}
+async function driveFolder(name, parent){
+  const f = await driveFind(name, parent, FOLDER); if(f) return f;
+  return driveFetch(`${DRIVE}?fields=id,name,webViewLink`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name, mimeType: FOLDER, parents:[parent]})});
+}
+function multipart(meta, html){
+  const b = "skx" + Math.random().toString(36).slice(2);
+  return {type: "multipart/related; boundary="+b,
+    body: `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${html}\r\n--${b}--`};
+}
+/* Create the student's Doc, or replace its content if it's already there (same file, same link). */
+async function driveDoc(name, parent, html){
+  const ex = await driveFind(name, parent, GDOC);
+  if(ex){ const m = multipart({}, html);
+    return driveFetch(`${DRIVE_UP}/${ex.id}?uploadType=multipart&fields=id,webViewLink`, {method:"PATCH", headers:{"Content-Type": m.type}, body: m.body}).then(r=>Object.assign({updated:true}, r)); }
+  const m = multipart({name, mimeType: GDOC, parents:[parent]}, html);
+  return driveFetch(`${DRIVE_UP}?uploadType=multipart&fields=id,webViewLink`, {method:"POST", headers:{"Content-Type": m.type}, body: m.body});
+}
+/* Semester folder: remembered by id (doc app/driveExport) so it's found again even if you move it in Drive. */
+async function semesterFolder(name){
+  const ref = db.doc("app/driveExport");
+  let saved = {};
+  try{ const d = await retry(()=>ref.get()); saved = d.exists ? (d.data().folders||{}) : {}; }catch(e){}
+  if(saved[name]){
+    try{ const f = await driveFetch(`${DRIVE}/${saved[name]}?fields=id,name,trashed,webViewLink`); if(f && !f.trashed) return f; }catch(e){ if(!(e instanceof DriveErr) || (e.status!==404 && e.status!==403)) throw e; }
+  }
+  const f = await driveFolder(name, "root");
+  saved[name] = f.id;
+  try{ await retry(()=>ref.set({folders: saved}, {merge:true})); }catch(e){}
+  return f;
+}
+
+function skillsForLab(c, atts){
+  const list = [...(c.core||[]), ...(c.pool||[]).filter(k=>(c.chosen||[]).includes(k.id))];
+  const extra = (c.pool||[]).filter(k=>!list.includes(k) && atts.some(a=>a.skillId===k.id));   // tested before the random pick changed
+  return [...list, ...extra];
+}
+function studentDocHtml(o){
+  const {st, lab, semester, skills, atts} = o;
+  const mine = atts.filter(a=>a.studentId===st.id).sort((a,b)=>(a.at||"").localeCompare(b.at||""));
+  const name = sname(st);
+  const nameOf = id => { const x = (o.students||[]).find(s=>s.id===id); return x? sname(x) : ""; };
+  const td = 'style="border:1px solid #999;padding:4px 8px;vertical-align:top"';
+  const resTxt = r => r==="P" ? '<b style="color:#137333">PASS</b>' : '<b style="color:#b3261e">FAIL</b>';
+  const per = skills.map(k=>{ const list = mine.filter(a=>a.skillId===k.id); const passed = list.some(a=>a.result==="P"); const fails = list.filter(a=>a.result!=="P").length;
+    return {k, list, passed, locked: !passed && fails>=MAX_ATTEMPTS,
+      status: passed ? `Passed on attempt ${list.findIndex(a=>a.result==="P")+1}` : fails>=MAX_ATTEMPTS ? `Failed all ${MAX_ATTEMPTS} attempts` : list.length ? `Failed ${fails}×, retest pending` : "Not tested yet"}; });
+  const passedN = per.filter(x=>x.passed).length;
+  const summary = per.map(x=>`<tr><td ${td}>${esc(x.k.name)}</td><td ${td}>${x.passed? '<span style="color:#137333">'+esc(x.status)+'</span>' : x.locked? '<span style="color:#b3261e">'+esc(x.status)+'</span>' : esc(x.status)}</td><td ${td} style="text-align:center">${x.list.length}</td></tr>`).join("");
+  const sections = per.filter(x=>x.list.length).map(x=>{
+    const sheetDef = SKILL_SHEETS[x.k.id];
+    const atHtml = x.list.map((a,i)=>{
+      const sh = a.sheet;
+      const examiner = (sh&&sh.examiner) || iname(a.instructorId, a.instructorName);
+      const lines = [`<b>Examiner:</b> ${esc(examiner)}`, `<b>Date:</b> ${esc(fmtTime(a.at))}`];
+      if(a.assistantId){ const an = nameOf(a.assistantId); if(an) lines.push(`<b>Assistant:</b> ${esc(an)}`); }
+      if(sh && sheetDef) lines.push(`<b>Score:</b> ${SheetKit.sheetScore(sheetDef, sh.marks||{})} / ${SheetKit.sheetTotal(sheetDef)}`);
+      if(sh && sh.activeMs!=null) lines.push(`<b>Test time:</b> ${Math.floor(sh.activeMs/60000)}:${String(Math.floor(sh.activeMs/1000)%60).padStart(2,"0")}${(sh.pauses||[]).length? ` (clock paused ${sh.pauses.length}×${sh.pauses.filter(p=>p.why).length? ": "+esc(sh.pauses.filter(p=>p.why).map(p=>p.why).join("; ")) : ""})` : ""}`);
+      if(sh && sh.scenario) lines.push(`<b>Scenario:</b> ${esc(sh.scenario)}`);
+      if(a.override) lines.push(`<b>Note:</b> ${esc(a.override==="Manual entry"? "Result entered by the lead instructor" : "Rules skipped: "+a.override)}`);
+      let body = "";
+      if(sh && sheetDef){
+        const missed = sheetDef.rows.map((r,ri)=>({r,ri})).filter(({r,ri})=>!r.h && !r.note && SheetKit.rowScore(r,ri,sh.marks||{}) < SheetKit.rowMax(r)).map(({r})=>esc(r.t));
+        const crit = (sh.critical||[]).map(ci=>esc(sheetDef.critical[ci]));
+        const stepNotes = Object.entries(sh.itemNotes||{}).filter(([,v])=>v).map(([ri,v])=>`${esc((sheetDef.rows[ri]||{}).t||"Step")}: <i>${esc(v)}</i>`);
+        if(crit.length) body += `<p><b style="color:#b3261e">Critical criteria marked:</b><br>${crit.join("<br>")}${sh.criticalNotes? `<br><i>Rationale: ${esc(sh.criticalNotes)}</i>`:""}</p>`;
+        if(missed.length) body += `<p><b>Steps missed (${missed.length}):</b><br>${missed.map(m=>"• "+m).join("<br>")}</p>`;
+        if(stepNotes.length) body += `<p><b>Step notes:</b><br>${stepNotes.join("<br>")}</p>`;
+        if(sh.notes) body += `<p><b>Examiner notes:</b><br>${esc(sh.notes).replace(/\n/g,"<br>")}</p>`;
+        body += `<p><b>Full skill sheet (${esc(sheetDef.code)})</b></p>` + SheetKit.docFragment(sheetDef, sh);
+      } else body += `<p><i>No digital skill sheet for this attempt (result recorded by the lead instructor).</i></p>`;
+      return `<h3>Attempt ${i+1} — ${resTxt(a.result)}</h3><p>${lines.join("<br>")}</p>${body}`;
+    }).join("");
+    return `<h2 style="page-break-before:always">${esc(x.k.name)}</h2><p>${esc(x.status)}</p>${atHtml}`;
+  }).join("");
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(name)}</title></head><body style="font-family:Arial,sans-serif;font-size:11pt">
+    <h1>${esc(name)}</h1>
+    <p><b>Semester:</b> ${esc(semester)}<br><b>Lab:</b> ${esc(lab)}${st.withdrawn? "<br><b>Status:</b> Withdrawn" : ""}<br><b>Skills passed:</b> ${passedN} of ${skills.length}<br><span style="color:#666">Exported ${esc(new Date().toLocaleString())}</span></p>
+    <table style="border-collapse:collapse;width:100%"><tr><th ${td}>Skill</th><th ${td}>Status</th><th ${td}>Attempts</th></tr>${summary}</table>
+    ${sections || "<p><i>No skills tested yet.</i></p>"}
+  </body></html>`;
+}
+
+async function labData(c){
+  if(c.id===cls) return {cfg, atts: attempts};
+  const d = await retry(()=>db.doc(P.cfg(c.id)).get());
+  const q = await retry(()=>db.collection(P.att(c.id)).get());
+  return {cfg: Object.assign(clone(DEFAULT_CONFIG), d.exists? d.data() : {}), atts: q.docs.map(x=>Object.assign({id:x.id}, x.data()))};
+}
+function openDriveExport(){
+  const def = cfg.semester || "";
+  openModal(`<h2>Export to Google Drive</h2>
+    <p class="hint">Makes <b>Semester › lab › one Google Doc per student</b> in your Drive, with every skill they've tested: attempts, examiners, scores, missed steps, notes and the full sheet. Exporting again updates the same files.</p>
+    <div class="field"><label for="dxSem">Semester folder name</label><input class="txt" id="dxSem" value="${esc(def)}" placeholder="e.g. Fall 2026"></div>
+    <div class="field"><label>Labs</label>${classes.map(c=>`<label class="li" style="gap:8px"><input type="checkbox" class="dxLab" value="${esc(c.id)}" checked> ${esc(c.name)}</label>`).join("")}</div>
+    <div id="dxMsg" class="hint" style="min-height:1.4em"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn" data-act="close">Cancel</button><button class="btn primary" id="dxGo">Export</button></div>`);
+  $("dxGo").onclick = runDriveExport;
+}
+let exporting = false;
+async function runDriveExport(){
+  if(exporting) return;
+  const semName = ($("dxSem").value||"").trim();
+  const labIds = [...document.querySelectorAll(".dxLab:checked")].map(x=>x.value);
+  const msg = t => { const m=$("dxMsg"); if(m) m.innerHTML = t; };
+  if(!semName){ msg("Type a name for the semester folder."); $("dxSem").focus(); return; }
+  if(!labIds.length){ msg("Pick at least one lab."); return; }
+  exporting = true; $("dxGo").disabled = true;
+  try{
+    msg("Connecting to Google Drive…");
+    try{ await driveToken(); }
+    catch(e){ throw new Error(e && e.code==="auth/popup-blocked" ? "Your browser blocked the Google window. Allow pop-ups for this site and try again." : "Google Drive access wasn't granted, so nothing was exported."); }
+    const sem = await semesterFolder(semName);
+    let done = 0, made = 0, upd = 0, total = 0;
+    const labs = [];
+    for(const id of labIds){ const c = classes.find(x=>x.id===id); const d = await labData(c); labs.push({c, d}); total += (d.cfg.students||[]).length; }
+    for(const {c, d} of labs){
+      const folder = await driveFolder(c.name, sem.id);
+      const skills = skillsForLab(d.cfg, d.atts);
+      const used = {};
+      const sts = (d.cfg.students||[]).slice().sort((a,b)=>sname(a).localeCompare(sname(b)));
+      for(const st of sts){
+        let fname = sname(st); used[fname] = (used[fname]||0)+1; if(used[fname]>1) fname += ` (${used[fname]})`;
+        msg(`${esc(c.name)}: ${esc(sname(st))} · ${done+1} of ${total}`);
+        const html = studentDocHtml({st, lab: c.name, semester: semName, skills, atts: d.atts, students: d.cfg.students});
+        const r = await driveDoc(fname, folder.id, html);
+        r.updated ? upd++ : made++; done++;
+      }
+    }
+    msg(`<b>Done.</b> ${made} new, ${upd} updated. <a href="${esc(sem.webViewLink || "https://drive.google.com/drive/my-drive")}" target="_blank" rel="noopener">Open the ${esc(semName)} folder in Drive</a>`);
+    toast(`Exported ${done} students to Google Drive.`);
+  }catch(e){
+    let t = e && e.message || "Something went wrong.";
+    if(e instanceof DriveErr){
+      if(e.reason==="accessNotConfigured" || /has not been used|is disabled/i.test(e.message)) t = `The Google Drive API is turned off for this project. <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com?project=${esc((window.FIREBASE_CONFIG||{}).projectId||"")}" target="_blank" rel="noopener">Turn it on here</a>, wait a minute, then export again.`;
+      else if(e.status===403 && /insufficient|scope/i.test(e.reason+e.message)) t = "Google didn't give Drive permission. Export again and tick the Drive box in the Google window.";
+      else t = "Google Drive said: " + esc(e.message) + ". Files already exported are kept; export again to finish.";
+    } else t = esc(t);
+    msg(`<span style="color:var(--fail)">${t}</span>`);
+  }finally{ exporting = false; const g=$("dxGo"); if(g) g.disabled = false; }
+}
+
 /* ---------- moving data over from the Claude-hosted tracker ---------- */
 async function importData(file){
   if(!guard()) return;
@@ -2489,7 +2663,7 @@ function startData(){
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127070313";
+const BUILD = "20261127071555";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{
