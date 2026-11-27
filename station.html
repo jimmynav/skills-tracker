@@ -139,6 +139,7 @@ details summary{cursor:pointer;margin-bottom:6px}
   <div><div class="muted" style="font-size:12px">Points</div><div class="score" id="bScore">0 / 0</div></div>
   <button class="btn primary" id="bSubmit" style="margin-left:auto;min-width:150px">Submit sheet</button>
 </div></div>
+<div id="buildTag" style="text-align:center;font-size:11px;color:var(--muted);padding:0 0 90px"></div>
 <div class="modal-bg" id="mBg" hidden><div class="modal" id="m"></div></div>
 
 <script>
@@ -426,7 +427,10 @@ function setTold(aid){
   const list = (stationDoc && stationDoc.toGive) || [], g = list.find(x=>x.aid===aid); if(!g) return;
   const tm = toldMap(); const cur = tm[aid]!==undefined ? !!tm[aid] : g.told;
   tm[aid] = cur ? false : new Date().toISOString(); store("told:"+code, tm);
-  db.doc("stationTold/"+code).set({code, cls: stationDoc.cls, iid: stationDoc.iid, told: tm, at: new Date().toISOString()}).catch(()=>flash("Couldn't save. Check the Wi-Fi."));
+  const t0 = performance.now();
+  db.doc("stationTold/"+code).set({code, cls: stationDoc.cls, iid: stationDoc.iid, told: tm, at: new Date().toISOString()})
+    .then(()=>miniToast(`${tm[aid]?"Told":"Untold"} saved in ${((performance.now()-t0)/1000).toFixed(1)}s`))
+    .catch(()=>flash("Couldn't save. Check the Wi-Fi."));
   render();
 }
 
@@ -456,6 +460,8 @@ function editNote(i){
 }
 
 /* ---------- small UI helpers ---------- */
+function miniToast(t){ let el = $("miniToast"); if(!el){ el = document.createElement("div"); el.id = "miniToast"; el.style.cssText = "position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:999px;font-size:14px;z-index:30"; document.body.appendChild(el); }
+  el.textContent = t; el.hidden = false; clearTimeout(el._t); el._t = setTimeout(()=>{ el.hidden = true; }, 4000); }
 function openSheet(html){ $("m").innerHTML = html; $("mBg").hidden = false; }
 function closeSheet(){ $("mBg").hidden = true; }
 $("mBg").addEventListener("click", e=>{ if(e.target===$("mBg")) closeSheet(); });
@@ -476,7 +482,7 @@ setInterval(tick, 1000);
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127064000";
+const BUILD = "20261127064334";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{
@@ -489,6 +495,7 @@ function checkVersion(){
   }).catch(()=>{});
 }
 setInterval(checkVersion, 120000); setTimeout(checkVersion, 15000);
+document.getElementById("buildTag").textContent = "version " + BUILD;
 </script>
 </body>
 </html>

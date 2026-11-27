@@ -2435,7 +2435,7 @@ function startData(){
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127064000";
+const BUILD = "20261127064334";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{
@@ -2448,6 +2448,7 @@ function checkVersion(){
   }).catch(()=>{});
 }
 setInterval(checkVersion, 120000); setTimeout(checkVersion, 15000);
+document.getElementById("acct").insertAdjacentHTML("afterend", `<span class="why" style="font-size:11px" title="Tracker version">v${BUILD.slice(4,12)}</span>`);
 </script>
 </body>
 </html>
