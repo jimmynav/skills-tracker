@@ -2341,7 +2341,7 @@ function printAttempt(aid){
 
 /* ---------- export to Google Drive: Semester / Lab / one Google Doc per student ---------- */
 const DRIVE = "https://www.googleapis.com/drive/v3/files", DRIVE_UP = "https://www.googleapis.com/upload/drive/v3/files";
-const FOLDER = "application/vnd.google-apps.folder", GDOC = "application/vnd.google-apps.document";
+const FOLDER = "application/vnd.google-apps.folder";
 let driveTok = null;     // {token, exp}
 async function driveToken(force){
   if(window.__testDriveToken) return window.__testDriveToken;
@@ -2375,18 +2375,49 @@ async function driveFolder(name, parent){
   const f = await driveFind(name, parent, FOLDER); if(f) return f;
   return driveFetch(`${DRIVE}?fields=id,name,webViewLink`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name, mimeType: FOLDER, parents:[parent]})});
 }
-function multipart(meta, html){
+function multipart(meta, bytes, mime){
   const b = "skx" + Math.random().toString(36).slice(2);
   return {type: "multipart/related; boundary="+b,
-    body: `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${html}\r\n--${b}--`};
+    body: new Blob([`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: ${mime}\r\n\r\n`, bytes, `\r\n--${b}--`])};
 }
-/* Create the student's Doc, or replace its content if it's already there (same file, same link). */
-async function driveDoc(name, parent, html){
-  const ex = await driveFind(name, parent, GDOC);
-  if(ex){ const m = multipart({}, html);
+const PDF = "application/pdf";
+/* Create the student's PDF, or replace its content if it's already there (same file, same link). */
+async function drivePdf(name, parent, bytes){
+  const ex = await driveFind(name, parent, PDF);
+  if(ex){ const m = multipart({}, bytes, PDF);
     return driveFetch(`${DRIVE_UP}/${ex.id}?uploadType=multipart&fields=id,webViewLink`, {method:"PATCH", headers:{"Content-Type": m.type}, body: m.body}).then(r=>Object.assign({updated:true}, r)); }
-  const m = multipart({name, mimeType: GDOC, parents:[parent]}, html);
+  const m = multipart({name, mimeType: PDF, parents:[parent]}, bytes, PDF);
   return driveFetch(`${DRIVE_UP}?uploadType=multipart&fields=id,webViewLink`, {method:"POST", headers:{"Content-Type": m.type}, body: m.body});
+}
+function loadScript(src){ return new Promise((ok, bad)=>{ const e=document.createElement("script"); e.src=src; e.onload=ok; e.onerror=()=>bad(new Error("Couldn't load "+src)); document.head.appendChild(e); }); }
+async function pdfLibs(){
+  if(!window.jspdf) await loadScript("vendor/jspdf.umd.min.js");
+  if(!(window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API.autoTable)) await loadScript("vendor/jspdf.plugin.autotable.min.js");
+  if(!window.RecordPdf) await loadScript("record-pdf.js");
+}
+function initialsOf(name){ const w = String(name||"").replace(/[^A-Za-z\s'-]/g," ").trim().split(/\s+/).filter(Boolean); return w.map(x=>x[0].toUpperCase()).join("").slice(0,3); }
+/* Everything the PDF needs for one student, worked out here so record-pdf.js stays a pure layout file. */
+function studentPdfData(st, c, d, semName){
+  const skills = skillsForLab(d.cfg, d.atts);
+  const core = d.cfg.core || [], pool = d.cfg.pool || [];
+  const activeIds = [...core, ...pool.filter(k=>(d.cfg.chosen||[]).includes(k.id))].map(k=>k.id);
+  const records = {};
+  const mine = d.atts.filter(a=>a.studentId===st.id).sort((a,b)=>(a.at||"").localeCompare(b.at||""));
+  const studentName = id => { const x = (d.cfg.students||[]).find(s=>s.id===id); return x? sname(x) : ""; };
+  for(const k of [...core, ...pool]){
+    const sheetDef = SKILL_SHEETS[k.id];
+    const list = mine.filter(a=>a.skillId===k.id).map((a,i)=>{
+      const sh = a.sheet || null;
+      const examiner = (sh && sh.examiner) || iname(a.instructorId, a.instructorName);
+      let score = null, missed = null;
+      if(sh && sheetDef){ score = SheetKit.sheetScore(sheetDef, sh.marks||{}); missed = sheetDef.rows.filter((r,ri)=>!r.h && !r.note && SheetKit.rowScore(r,ri,sh.marks||{}) < SheetKit.rowMax(r)).length; }
+      return {result: a.result, at: a.at, examiner, no: i+1, score, missed, critCount: sh ? (sh.critical||[]).length : 0, activeMs: sh && sh.activeMs!=null ? sh.activeMs : null,
+        sheet: sh, assistant: a.assistantId ? studentName(a.assistantId) : "", initials: initialsOf(examiner)};
+    });
+    if(list.length) records[k.id] = {list};
+  }
+  return {student: st, name: sname(st), semester: semName, lab: c.name, core, pool, skills: [...core, ...pool], activeIds, records,
+    possible: id => SKILL_SHEETS[id] ? SheetKit.sheetTotal(SKILL_SHEETS[id]) : 0, initials: a => a.initials};
 }
 /* Semester folder: remembered by id (doc app/driveExport) so it's found again even if you move it in Drive. */
 async function semesterFolder(name){
@@ -2407,52 +2438,6 @@ function skillsForLab(c, atts){
   const extra = (c.pool||[]).filter(k=>!list.includes(k) && atts.some(a=>a.skillId===k.id));   // tested before the random pick changed
   return [...list, ...extra];
 }
-function studentDocHtml(o){
-  const {st, lab, semester, skills, atts} = o;
-  const mine = atts.filter(a=>a.studentId===st.id).sort((a,b)=>(a.at||"").localeCompare(b.at||""));
-  const name = sname(st);
-  const nameOf = id => { const x = (o.students||[]).find(s=>s.id===id); return x? sname(x) : ""; };
-  const td = 'style="border:1px solid #999;padding:4px 8px;vertical-align:top"';
-  const resTxt = r => r==="P" ? '<b style="color:#137333">PASS</b>' : '<b style="color:#b3261e">FAIL</b>';
-  const per = skills.map(k=>{ const list = mine.filter(a=>a.skillId===k.id); const passed = list.some(a=>a.result==="P"); const fails = list.filter(a=>a.result!=="P").length;
-    return {k, list, passed, locked: !passed && fails>=MAX_ATTEMPTS,
-      status: passed ? `Passed on attempt ${list.findIndex(a=>a.result==="P")+1}` : fails>=MAX_ATTEMPTS ? `Failed all ${MAX_ATTEMPTS} attempts` : list.length ? `Failed ${fails}×, retest pending` : "Not tested yet"}; });
-  const passedN = per.filter(x=>x.passed).length;
-  const summary = per.map(x=>`<tr><td ${td}>${esc(x.k.name)}</td><td ${td}>${x.passed? '<span style="color:#137333">'+esc(x.status)+'</span>' : x.locked? '<span style="color:#b3261e">'+esc(x.status)+'</span>' : esc(x.status)}</td><td ${td} style="text-align:center">${x.list.length}</td></tr>`).join("");
-  const sections = per.filter(x=>x.list.length).map(x=>{
-    const sheetDef = SKILL_SHEETS[x.k.id];
-    const atHtml = x.list.map((a,i)=>{
-      const sh = a.sheet;
-      const examiner = (sh&&sh.examiner) || iname(a.instructorId, a.instructorName);
-      const lines = [`<b>Examiner:</b> ${esc(examiner)}`, `<b>Date:</b> ${esc(fmtTime(a.at))}`];
-      if(a.assistantId){ const an = nameOf(a.assistantId); if(an) lines.push(`<b>Assistant:</b> ${esc(an)}`); }
-      if(sh && sheetDef) lines.push(`<b>Score:</b> ${SheetKit.sheetScore(sheetDef, sh.marks||{})} / ${SheetKit.sheetTotal(sheetDef)}`);
-      if(sh && sh.activeMs!=null) lines.push(`<b>Test time:</b> ${Math.floor(sh.activeMs/60000)}:${String(Math.floor(sh.activeMs/1000)%60).padStart(2,"0")}${(sh.pauses||[]).length? ` (clock paused ${sh.pauses.length}×${sh.pauses.filter(p=>p.why).length? ": "+esc(sh.pauses.filter(p=>p.why).map(p=>p.why).join("; ")) : ""})` : ""}`);
-      if(sh && sh.scenario) lines.push(`<b>Scenario:</b> ${esc(sh.scenario)}`);
-      if(a.override) lines.push(`<b>Note:</b> ${esc(a.override==="Manual entry"? "Result entered by the lead instructor" : "Rules skipped: "+a.override)}`);
-      let body = "";
-      if(sh && sheetDef){
-        const missed = sheetDef.rows.map((r,ri)=>({r,ri})).filter(({r,ri})=>!r.h && !r.note && SheetKit.rowScore(r,ri,sh.marks||{}) < SheetKit.rowMax(r)).map(({r})=>esc(r.t));
-        const crit = (sh.critical||[]).map(ci=>esc(sheetDef.critical[ci]));
-        const stepNotes = Object.entries(sh.itemNotes||{}).filter(([,v])=>v).map(([ri,v])=>`${esc((sheetDef.rows[ri]||{}).t||"Step")}: <i>${esc(v)}</i>`);
-        if(crit.length) body += `<p><b style="color:#b3261e">Critical criteria marked:</b><br>${crit.join("<br>")}${sh.criticalNotes? `<br><i>Rationale: ${esc(sh.criticalNotes)}</i>`:""}</p>`;
-        if(missed.length) body += `<p><b>Steps missed (${missed.length}):</b><br>${missed.map(m=>"• "+m).join("<br>")}</p>`;
-        if(stepNotes.length) body += `<p><b>Step notes:</b><br>${stepNotes.join("<br>")}</p>`;
-        if(sh.notes) body += `<p><b>Examiner notes:</b><br>${esc(sh.notes).replace(/\n/g,"<br>")}</p>`;
-        body += `<p><b>Full skill sheet (${esc(sheetDef.code)})</b></p>` + SheetKit.docFragment(sheetDef, sh);
-      } else body += `<p><i>No digital skill sheet for this attempt (result recorded by the lead instructor).</i></p>`;
-      return `<h3>Attempt ${i+1} — ${resTxt(a.result)}</h3><p>${lines.join("<br>")}</p>${body}`;
-    }).join("");
-    return `<h2 style="page-break-before:always">${esc(x.k.name)}</h2><p>${esc(x.status)}</p>${atHtml}`;
-  }).join("");
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(name)}</title></head><body style="font-family:Arial,sans-serif;font-size:11pt">
-    <h1>${esc(name)}</h1>
-    <p><b>Semester:</b> ${esc(semester)}<br><b>Lab:</b> ${esc(lab)}${st.withdrawn? "<br><b>Status:</b> Withdrawn" : ""}<br><b>Skills passed:</b> ${passedN} of ${skills.length}<br><span style="color:#666">Exported ${esc(new Date().toLocaleString())}</span></p>
-    <table style="border-collapse:collapse;width:100%"><tr><th ${td}>Skill</th><th ${td}>Status</th><th ${td}>Attempts</th></tr>${summary}</table>
-    ${sections || "<p><i>No skills tested yet.</i></p>"}
-  </body></html>`;
-}
-
 async function labData(c){
   if(c.id===cls) return {cfg, atts: attempts};
   const d = await retry(()=>db.doc(P.cfg(c.id)).get());
@@ -2462,7 +2447,7 @@ async function labData(c){
 function openDriveExport(){
   const def = cfg.semester || "";
   openModal(`<h2>Export to Google Drive</h2>
-    <p class="hint">Makes <b>Semester › lab › one Google Doc per student</b> in your Drive, with every skill they've tested: attempts, examiners, scores, missed steps, notes and the full sheet. Exporting again updates the same files.</p>
+    <p class="hint">Makes <b>Semester › lab › one PDF per student</b> in your Drive: the filled-in cover sheet, a stats page, then each tested skill on its own page as an NREMT sheet. Exporting again updates the same files.</p>
     <div class="field"><label for="dxSem">Semester folder name</label><input class="txt" id="dxSem" value="${esc(def)}" placeholder="e.g. Fall 2026"></div>
     <div class="field"><label>Labs</label>${classes.map(c=>`<label class="li" style="gap:8px"><input type="checkbox" class="dxLab" value="${esc(c.id)}" checked> ${esc(c.name)}</label>`).join("")}</div>
     <div id="dxMsg" class="hint" style="min-height:1.4em"></div>
@@ -2479,6 +2464,8 @@ async function runDriveExport(){
   if(!labIds.length){ msg("Pick at least one lab."); return; }
   exporting = true; $("dxGo").disabled = true;
   try{
+    msg("Getting ready…");
+    try{ await pdfLibs(); }catch(e){ throw new Error("Couldn't load the PDF maker. Check your connection and try again."); }
     msg("Connecting to Google Drive…");
     try{ await driveToken(); }
     catch(e){ throw new Error(e && e.code==="auth/popup-blocked" ? "Your browser blocked the Google window. Allow pop-ups for this site and try again." : "Google Drive access wasn't granted, so nothing was exported."); }
@@ -2488,14 +2475,13 @@ async function runDriveExport(){
     for(const id of labIds){ const c = classes.find(x=>x.id===id); const d = await labData(c); labs.push({c, d}); total += (d.cfg.students||[]).length; }
     for(const {c, d} of labs){
       const folder = await driveFolder(c.name, sem.id);
-      const skills = skillsForLab(d.cfg, d.atts);
       const used = {};
       const sts = (d.cfg.students||[]).slice().sort((a,b)=>sname(a).localeCompare(sname(b)));
       for(const st of sts){
-        let fname = sname(st); used[fname] = (used[fname]||0)+1; if(used[fname]>1) fname += ` (${used[fname]})`;
+        let base = sname(st); used[base] = (used[base]||0)+1; if(used[base]>1) base += ` (${used[base]})`;
         msg(`${esc(c.name)}: ${esc(sname(st))} · ${done+1} of ${total}`);
-        const html = studentDocHtml({st, lab: c.name, semester: semName, skills, atts: d.atts, students: d.cfg.students});
-        const r = await driveDoc(fname, folder.id, html);
+        const bytes = RecordPdf.buildStudentPdf(studentPdfData(st, c, d, semName));
+        const r = await drivePdf(base.replace(/\.$/,"") + ".pdf", folder.id, bytes);
         r.updated ? upd++ : made++; done++;
       }
     }
@@ -2663,7 +2649,7 @@ function startData(){
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127071555";
+const BUILD = "20261127073243";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{
