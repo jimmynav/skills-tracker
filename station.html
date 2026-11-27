@@ -163,7 +163,9 @@ async function boot(){
   firebase.initializeApp(FIREBASE_CONFIG);
   try{
     const cred = await firebase.auth().signInAnonymously();
-    uid = cred.user.uid; db = firebase.firestore(); start();
+    uid = cred.user.uid; db = firebase.firestore();
+    try{ db.settings({experimentalForceLongPolling: true, merge: true}); }catch(e){}   // deliver live updates immediately on filtering networks
+    start();
   }catch(e){ showMsg("Couldn't connect. Check the Wi-Fi and reload the page."); }
 }
 function start(){
@@ -474,7 +476,7 @@ setInterval(tick, 1000);
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127063521";
+const BUILD = "20261127064000";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{

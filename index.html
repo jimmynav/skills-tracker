@@ -2410,6 +2410,9 @@ async function boot(){
     $("signoutBtn").onclick = ()=>auth.signOut().then(()=>location.reload());
     if(started) return; started = true;
     db = firebase.firestore();
+    // Some networks (school filters, antivirus, VPNs) hold live updates until a 30-second cycle ends.
+    // Long polling sends each update the moment it happens, so nothing sits waiting.
+    try{ db.settings({experimentalForceLongPolling: true, merge: true}); }catch(e){}
     startData();
   });
 }
@@ -2432,7 +2435,7 @@ function startData(){
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127063521";
+const BUILD = "20261127064000";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{
