@@ -29,6 +29,13 @@ service cloud.firestore {
         && request.resource.data.code == code;
     }
 
+    // "Told" ticks from a station for results the owner released to it.
+    match /stationTold/{code} {
+      allow write: if request.auth != null
+        && exists(/databases/$(database)/documents/stationCodes/$(code))
+        && request.resource.data.code == code;
+    }
+
     // Skill sheets submitted by instructors.
     match /submissions/{id} {
       function validSheet(d) {

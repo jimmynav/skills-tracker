@@ -159,6 +159,7 @@ main{flex:1;min-height:0}
 .gcell.told label{background:var(--paper);opacity:.65}
 .gcell input{width:18px;height:18px;cursor:pointer;accent-color:var(--pass)}
 .gcell.empty{color:var(--line)}
+.relchip{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:0 4px}
 .gmeta{font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap;font-weight:400}
 .gins{color:var(--ink);font-weight:600}
 .gwait.long{color:var(--warn);font-weight:700}
@@ -953,12 +954,15 @@ function fmCard(ins, mini){
       <span class="s">${n===1?"1st attempt":`Retest · attempt ${n} of ${MAX_ATTEMPTS}`}${st.override?" · rules skipped":""}</span>${assistHtml(ins.id, true)}${subHtml(ins.id, true)}`;
     acts = `${stationClock(ins.id)}<button class="btn pass" data-act="pass" data-iid="${ins.id}">Pass</button><button class="btn fail" data-act="fail" data-iid="${ins.id}">Fail</button>`;
   } else if(!mini && k && !st.onBreak){
-    const ok = suggestions(ins.id).ok;
-    if(ok.length){
+    const sg = suggestions(ins.id), ok = sg.ok;
+    const ov = sg.blocked.filter(b=>b.e.sameInstr);   // only blocked because they already tested with this instructor
+    if(ok.length || ov.length){
       const keep = ui.floorPick[ins.id];
       const pair = needsAssist(k) ? swapPair(ins.id) : null;
-      const sel = ok.some(c=>c.s.id===keep) ? keep : (pair ? pair.main : ok[0].s.id);
-      const opts = ok.map((c,i)=>`<option value="${c.s.id}" ${c.s.id===sel?"selected":""}>${esc(sname(c.s))}${pair&&c.s.id===pair.main?" (was assistant)":i===0?" (waited longest)":""}${c.e.retest?` · retest`:""}</option>`).join("");
+      const all = ok.map(c=>c.s.id).concat(ov.map(b=>b.s.id));
+      const sel = all.includes(keep) ? keep : (pair ? pair.main : all[0]);
+      const opts = ok.map((c,i)=>`<option value="${c.s.id}" ${c.s.id===sel?"selected":""}>${esc(sname(c.s))}${pair&&c.s.id===pair.main?" (was assistant)":i===0?" (waited longest)":""}${c.e.retest?` · retest`:""}</option>`).join("")
+        + (ov.length? `<optgroup label="Override: already tested with ${esc(ins.name)}">${ov.map(b=>`<option value="${b.s.id}" data-ov="1" ${b.s.id===sel?"selected":""}>${esc(sname(b.s))} · retest ${b.e.attemptNo-1} (override)</option>`).join("")}</optgroup>` : "");
       line = `<span class="s nextline">Next: <select class="fsel fmain" id="fsel-${ins.id}" data-act="floorsel" data-iid="${ins.id}" draggable="false" aria-label="Student to send to ${esc(ins.name)}">${opts}</select></span>`;
       if(needsAssist(k)){
         const c = assistantCandidates(ins.id, sel);
@@ -1261,11 +1265,12 @@ function renderGive(){
     const pass = a.result==="P";
     const waitMin = Math.floor(activeMs(a.at)/60000);
     const waitTxt = waitMin<1? "just now" : minsText(waitMin);
-    const sub = a.told ? `told ${new Date(a.toldAt||a.at).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})}`
+    const rel = a.released ? `<span class="relchip" title="Released ${esc(fmtTime(a.released))}">released</span>` : (a.told ? "" : `<a href="#" data-act="release" data-aid="${a.id}" title="Send this result to ${esc(iname(a.instructorId, a.instructorName))}'s screen to give to the student">release</a>`);
+    const sub = a.told ? `told ${new Date(a.toldAt||a.at).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})}${a.toldBy?` by ${esc(a.toldBy)}`:""}`
                        : `<span class="gwait ${waitMin>=30?"long":""}" title="Waiting for this result since ${esc(fmtTime(a.at))}">waiting ${waitTxt}</span>`;
     return `<td class="gcell ${a.told?"told":""}"><label><span class="gres ${pass?"p":"f"}">${pass?"PASS":"FAIL"}</span>
       <input type="checkbox" data-act="told" data-aid="${a.id}" ${a.told?"checked":""} aria-label="Told ${esc(sname(st))} their ${["1st","2nd","3rd"][i]} try result"></label>
-      <div class="gmeta"><span class="gins">${esc(iname(a.instructorId, a.instructorName))}</span> · ${sub}${a.sheet?` · <a href="#" data-act="printatt" data-aid="${a.id}">sheet</a>`:""}</div></td>`;
+      <div class="gmeta"><span class="gins">${esc(iname(a.instructorId, a.instructorName))}</span> · ${sub}${a.sheet?` · <a href="#" data-act="printatt" data-aid="${a.id}">sheet</a>`:""}${rel?` · ${rel}`:""}</div></td>`;
   };
   const rows = act.map(st=>{
     const re = rec(st.id,kid), at = stationOf(st.id), here = at && live.stations[at].skillId===kid;
@@ -1281,9 +1286,10 @@ function renderGive(){
       <div class="gchips">${chips}</div>
       <div class="row"><h2>${esc(k?k.name:"")}</h2><span class="row" style="margin-left:auto;gap:6px">${roundTxt}</span></div></div>
     <div class="card">
-      <p class="hint">Tell each student their result and tick the box. The number on a skill is how many results haven't been given yet. Each result shows who tested it and how long the student has been waiting to hear it (amber after 30 min).</p>
+      <p class="hint"><b>Release</b> sends results to the screens of the instructors who tested them, so they can give results themselves; when they tick Told, it shows here. Or tell each student yourself and tick the box. The number on a skill is how many results haven't been given yet. Each result shows who tested it and how long the student has been waiting to hear it (amber after 30 min).</p>
       <div class="gwrap"><table class="plain gtable"><thead><tr><th>Student</th>
-        ${[0,1,2].map(i=>`<th class="gh">${["1st try","2nd try","3rd try"][i]}${colCount(i)?` <button class="btn small ghost" data-act="toldall" data-i="${i}" title="Mark every ${["1st","2nd","3rd"][i]}-try result for this skill as given">Mark all given</button>`:""}</th>`).join("")}
+        ${[0,1,2].map(i=>{ const unrel = act.filter(st=>{ const a=rec(st.id,kid).list[i]; return a && !a.told && !a.released; }).length;
+          return `<th class="gh">${["1st try","2nd try","3rd try"][i]}${unrel?`<br><button class="btn small primary" data-act="releaseall" data-i="${i}" title="Send these results to the screens of the instructors who tested them">Release ${unrel} to instructors</button>`:""}${colCount(i)?` <button class="btn small ghost" data-act="toldall" data-i="${i}" title="Mark every ${["1st","2nd","3rd"][i]}-try result for this skill as given">Mark all given</button>`:""}</th>`; }).join("")}
       </tr></thead><tbody>${rows}</tbody></table></div>
     </div>`;
   fitGiveHeader();
@@ -1832,6 +1838,7 @@ document.addEventListener("click", e=>{
   if(slot && ui.pick){ const n=Number(slot.dataset.slot); placeInstructor(ui.pick, n||null); return; }
   const go = e.target.closest("[data-goto]"); if(go){ setTab(go.dataset.goto); return; }
   const a = e.target.closest("[data-act]");
+  if(a && a.tagName==="A") e.preventDefault();
   if(a){
     const act = a.dataset.act, iid = a.dataset.iid;
     if(act==="send") return sendWithAssistant(iid, a.dataset.sid, a.closest(".station"));
@@ -1860,9 +1867,12 @@ document.addEventListener("click", e=>{
     if(act==="asstshow"){ ui.asstOpen[iid] = true; renderAll(); return; }
     if(act==="fsend"){
       const card=a.closest(".fm-card"), sel=card.querySelector("select.fmain"), as=card.querySelector("select.fasst");
-      if(sel){ const sid=sel.value, aid=as && as.value; delete ui.floorPick[iid]; delete ui.asstPick[iid];
-        sendStudent(iid, sid);
-        if(aid && aid!==sid && live.stations[iid] && live.stations[iid].studentId===sid) setAssistant(iid, aid); }
+      if(sel){ const sid=sel.value, aid=as && as.value, isOv = sel.selectedOptions[0] && sel.selectedOptions[0].dataset.ov;
+        const go = ()=>{ delete ui.floorPick[iid]; delete ui.asstPick[iid];
+          sendStudent(iid, sid, !!isOv);
+          if(aid && aid!==sid && live.stations[iid] && live.stations[iid].studentId===sid) setAssistant(iid, aid); };
+        if(isOv){ confirmBox("Same instructor retest?", `<b>${esc(sname(student(sid)))}</b> already tested this skill with <b>${esc(iname(iid))}</b>. Send them anyway, for example when ${esc(iname(iid))} is the only qualified instructor? The attempt will be flagged as sent outside the rules.`, "Send anyway", go); $("cfOk").className="btn primary"; }
+        else go(); }
       return;
     }
     if(act==="copylayout"){
@@ -1873,6 +1883,8 @@ document.addEventListener("click", e=>{
       $("cfOk").className = "btn primary";
       return;
     }
+    if(act==="release"){ e.preventDefault(); releaseResults([a.dataset.aid]); return; }
+    if(act==="releaseall"){ const i=Number(a.dataset.i), kid=ui.giveSkill; releaseResults(activeStudents().map(st=>rec(st.id,kid).list[i]).filter(x=>x && !x.told && !x.released).map(x=>x.id)); return; }
     if(act==="giveskill"){ ui.giveSkill = a.dataset.kid; renderGive(); return; }
     if(act==="toldall"){ const i=Number(a.dataset.i), kid=ui.giveSkill;
       const ids = activeStudents().map(st=>rec(st.id,kid).list[i]).filter(x=>x && !x.told).map(x=>x.id);
@@ -2053,6 +2065,7 @@ function codePayload(iid){
   const stu = st.studentId ? student(st.studentId) : null;
   return {cls, lab: className(cls), iid, instructorName: iname(iid), stationNo: st.slot || null,
     skillId: k ? k.id : null, skillName: k ? k.name : null, sheetCode: sh ? sh.code : null, onBreak: !!st.onBreak, prompt: k ? (prompts[k.id] || "") : "",
+    toGive: releasedFor(iid),
     student: stu ? {id: stu.id, name: sname(stu), attemptNo: (buildIndex(), rec(stu.id, st.skillId).n + 1), startedAt: st.startedAt || null, sendId: st.sendId || null,
       assistantName: st.assistantId ? sname(student(st.assistantId)) : null} : null};
 }
@@ -2111,6 +2124,40 @@ function stationClock(iid){
   if((x.phase==="ended" || x.phase==="submitted") && x.startedAt && x.endedAt) return `<span class="timer num stopped" title="Test ended, instructor is finishing the sheet">${durText(Date.parse(x.endedAt)-Date.parse(x.startedAt)-pm)}${x.phase==="ended"?" · grading":""}</span>`;
   return timerHtml(st.startedAt);
 }
+
+/* ---------- releasing results to instructor screens ---------- */
+function releaseResults(ids){
+  if(!guard()) return;
+  const now = new Date().toISOString(); let n = 0, noScreen = new Set();
+  for(const id of ids){ const a = attempts.find(x=>x.id===id); if(!a || a.released || a.told) continue;
+    a.released = now; n++; saveAttempt(a).catch(()=>{});
+    const iid = canon(a.instructorId); if(!(live.stations[iid] && live.stations[iid].code)) noScreen.add(iname(iid, a.instructorName)); }
+  for(const k of Object.keys(codeCache)) delete codeCache[k];
+  renderAll(); scheduleCodeSync();
+  toast(`Released ${n} result${n===1?"":"s"} to instructors.` + (noScreen.size? ` ${[...noScreen].join(", ")} ${noScreen.size>1?"aren't":"isn't"} using an instructor screen in this lab, so give those yourself.`:""));
+}
+/* Results this instructor has been asked to give (released, for students they tested). */
+function releasedFor(iid){
+  const cutoff = Date.now() - 12*3600000;
+  return attempts.filter(a=>a.released && canon(a.instructorId)===iid && (!a.told || Date.parse(a.toldAt||a.released) > cutoff))
+    .sort((a,b)=>(a.released||"").localeCompare(b.released||""))
+    .map(a=>{ const k = skill(a.skillId), sh = SKILL_SHEETS[a.skillId]; buildIndex(); const r = rec(a.studentId, a.skillId);
+      return {aid: a.id, studentName: sname(student(a.studentId)), skill: k ? k.short : a.skillId, result: a.result, attemptNo: r.list.findIndex(x=>x.id===a.id)+1,
+        points: a.sheet ? a.sheet.points : null, total: sh ? SheetKit.sheetTotal(sh) : null, told: !!a.told}; });
+}
+/* Instructors tick "Told" on their screen; apply it here. */
+let toldDocs = [], toldUnsub = null;
+function applyTold(){
+  for(const d of toldDocs){
+    const who = iname(d.iid);
+    for(const [aid, v] of Object.entries(d.told||{})){
+      const a = attempts.find(x=>x.id===aid); if(!a) continue;
+      if(v && !a.told){ a.told = true; a.toldAt = v; a.toldBy = who; saveAttempt(a).catch(()=>{}); }
+      else if(!v && a.told && a.toldBy===who){ delete a.told; delete a.toldAt; delete a.toldBy; saveAttempt(a).catch(()=>{}); }
+    }
+  }
+}
+
 /* ---------- candidate prompts (shared by all labs) ---------- */
 let prompts = {}, promptsSub = null;
 function subscribePrompts(){
@@ -2127,6 +2174,8 @@ function subscribeSubs(){
   const id = cls;
   if(statusUnsub){ try{ statusUnsub(); }catch(e){} statusUnsub = null; }
   statusUnsub = db.collection("stationStatus").where("cls","==",id).onSnapshot(snap=>{ if(cls!==id) return; statuses = snap.docs.map(d=>clone(d.data())); renderAll(); }, ()=>{});
+  if(toldUnsub){ try{ toldUnsub(); }catch(e){} toldUnsub = null; }
+  toldUnsub = db.collection("stationTold").where("cls","==",id).onSnapshot(snap=>{ if(cls!==id) return; toldDocs = snap.docs.map(d=>clone(d.data())); if(loaded.att) applyTold(); renderAll(); }, ()=>{});
   subsUnsub = db.collection("submissions").where("cls","==",id).onSnapshot(snap=>{
     if(cls!==id) return;
     const before = new Set(subs.filter(x=>x.status==="pending").map(x=>x.id));
@@ -2280,6 +2329,7 @@ function openClass(id){
   unsubs.push(db.collection(P.att(id)).onSnapshot(snap=>{
     if(cls!==id) return;
     attempts = snap.docs.map(d=>Object.assign({id:d.id}, clone(d.data())));
+    scheduleCodeSync();
     if(!snap.metadata.fromCache){ loaded.att = true; doneCheck(); }
     renderAll();
   }, onErr));
