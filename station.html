@@ -63,6 +63,12 @@ textarea.txt{min-height:90px;resize:vertical}
 .crit{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);text-align:left;width:100%}
 .crit .box{flex:none;width:26px;height:26px;border-radius:6px;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}
 .crit.on{border-color:var(--fail);background:var(--fail-soft)} .crit.on .box{background:var(--fail);border-color:var(--fail)}
+.prompt{white-space:pre-wrap;font-size:17px;line-height:1.55;background:var(--accent-soft);border-left:4px solid var(--accent);border-radius:8px;padding:12px 14px}
+.btn.start{background:var(--pass);border-color:var(--pass);color:#fff;font-size:20px;min-height:60px}
+.btn.endbtn{background:var(--fail);border-color:var(--fail);color:#fff}
+.clockbig{font-family:var(--mono);font-size:34px;font-weight:600;color:var(--accent)}
+.clockbig.stopped{color:var(--ink)}
+details summary{cursor:pointer;margin-bottom:6px}
 .result{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .rbtn{border:2px solid var(--line);border-radius:12px;padding:16px;font-family:var(--display);font-size:22px;font-weight:800;background:var(--card)}
 .rbtn.p.on{background:var(--pass);border-color:var(--pass);color:#fff} .rbtn.f.on{background:var(--fail);border-color:var(--fail);color:#fff}
@@ -140,7 +146,7 @@ function listen(c){
     if(!snap.exists){ store("station-code", null); askCode("That code isn't active. Check it with the lead instructor."); return; }
     const prev = stationDoc; stationDoc = snap.data();
     const prevSend = prev && prev.student ? prev.student.sendId : null, nowSend = stationDoc.student ? stationDoc.student.sendId : null;
-    if(prevSend !== nowSend) loadFormFor(stationDoc);
+    if(prevSend !== nowSend){ loadFormFor(stationDoc); if(stationDoc.student && form && !form.tStart && !store("sub:"+stationDoc.student.sendId)) pushStatus("called"); }
     render();
   }, err=>{ store("station-code", null); askCode("That code isn't active. Check it with the lead instructor."); });
 }
@@ -162,6 +168,12 @@ function loadFormFor(d){
   }
 }
 function saveDraft(){ const k = draftKey(); if(k) store(k, form); }
+/* Tell the lead instructor's tracker where this test is: called → running → ended → submitted. */
+function pushStatus(phase){
+  const d = stationDoc; if(!d || !d.student) return;
+  db.doc("stationStatus/"+code).set({code, cls: d.cls, iid: d.iid, sendId: d.student.sendId, phase,
+    startedAt: form.tStart || null, endedAt: form.tEnd || null, at: new Date().toISOString()}).catch(()=>{});
+}
 function sheet(){ return stationDoc && stationDoc.skillId ? SKILL_SHEETS[stationDoc.skillId] : null; }
 
 /* ---------- rendering ---------- */
@@ -173,7 +185,7 @@ function render(){
   const sh = sheet();
   $("tSkill").textContent = sh ? `${sh.code} · ${sh.title}` : (d.skillName || "No skill assigned yet");
   const stu = d.student;
-  $("tTimer").hidden = !stu;
+  $("tTimer").hidden = !(stu && form && form.tStart);
   if(d.onBreak && !stu){ $("bar").hidden = true; $("app").innerHTML = `<div class="card center"><div class="big">You're marked “not here”</div><div class="muted">The lead instructor will send students when you're back.</div></div>${switchLink()}`; return; }
   if(!stu){
     $("bar").hidden = true;
@@ -186,7 +198,29 @@ function render(){
   const submittedPending = sub && sub.status==="pending";
   const returned = sub && sub.status==="returned";
   const locked = submittedPending;
-  const head = `<div class="card">
+  const promptHtml = d.prompt ? `<div class="prompt">${esc(d.prompt)}</div>` : `<div class="muted">No candidate prompt has been added for this skill yet. The lead instructor can add one in Setup.</div>`;
+  if(!form.tStart && !sub){
+    $("bar").hidden = true;
+    $("app").innerHTML = `<div class="card">
+        <div class="muted">Your next candidate</div>
+        <div class="big">${esc(stu.name)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${stu.attemptNo>1?`<span class="chip re">Retest · attempt ${stu.attemptNo} of 3</span>`:`<span class="chip">1st attempt</span>`}${stu.assistantName?`<span class="chip">Assistant: ${esc(stu.assistantName)}</span>`:""}</div>
+        <div class="muted">Call the candidate to the testing area.</div></div>
+      <div class="card"><h3>Read to the candidate</h3>${promptHtml}
+        ${sh.timeLimitMin?`<div class="muted">Time limit: ${sh.timeLimitMin} minutes from Start.</div>`:""}
+        <button class="btn start" id="startTest">Start test</button>
+        <div class="muted center">Tap Start when the candidate is ready. The clock starts now.</div></div>`;
+    $("startTest").onclick = ()=>{ form.tStart = new Date().toISOString(); form.tEnd = null; saveDraft(); pushStatus("running"); render(); };
+    return;
+  }
+  const ended = !!form.tEnd;
+  const clockCard = `<div class="card clockcard">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div><div class="muted">${ended?"Test ended":"Test in progress"}</div><div class="clockbig ${ended?"stopped":""}" id="clockBig">${durText((ended?Date.parse(form.tEnd):Date.now())-Date.parse(form.tStart))}</div></div>
+        ${locked? "" : ended ? `<button class="btn" id="undoEnd" style="margin-left:auto">Undo end</button>` : `<button class="btn endbtn" id="endTest" style="margin-left:auto">End test</button>`}
+      </div>
+      <details${ended?"":" open"}><summary class="muted">Candidate prompt</summary>${promptHtml}</details></div>`;
+  const head = clockCard + `<div class="card">
       <div class="muted">Candidate</div>
       <div class="big">${esc(stu.name)}</div>
       <div class="row" style="display:flex;gap:6px;flex-wrap:wrap">${stu.attemptNo>1?`<span class="chip re">Retest · attempt ${stu.attemptNo} of 3</span>`:`<span class="chip">1st attempt</span>`}${stu.assistantName?`<span class="chip">Assistant: ${esc(stu.assistantName)}</span>`:""}${sh.timeLimitMin?`<span class="chip">Time limit ${sh.timeLimitMin} min</span>`:""}</div>
@@ -215,6 +249,8 @@ function render(){
     </div>`;
   $("bar").hidden = false;
   $("bScore").textContent = SheetKit.sheetScore(sh, form.marks) + " / " + SheetKit.sheetTotal(sh);
+  const eb = $("endTest"); if(eb) eb.onclick = ()=>{ form.tEnd = new Date().toISOString(); saveDraft(); pushStatus("ended"); render(); };
+  const ub = $("undoEnd"); if(ub) ub.onclick = ()=>{ form.tEnd = null; saveDraft(); pushStatus("running"); render(); };
   $("bSubmit").disabled = locked;
   $("bSubmit").textContent = locked ? "Submitted" : returned ? "Resubmit sheet" : "Submit sheet";
   tick();
@@ -252,7 +288,9 @@ $("bSubmit").onclick = ()=>{
   if(!form.result){ flash("Choose PASS or FAIL first."); return; }
   if(form.critical.length && !form.criticalNotes.trim()){ flash("Document your rationale for the checked critical criteria."); const c=$("critNotes"); if(c) c.focus(); return; }
   const pts = SheetKit.sheetScore(sh, form.marks), tot = SheetKit.sheetTotal(sh);
+  if(!form.tEnd){ form.tEnd = new Date().toISOString(); saveDraft(); pushStatus("ended"); render(); }
   openSheet(`<h2>Submit this sheet?</h2>
+    <div class="muted">Test time ${durText(Date.parse(form.tEnd)-Date.parse(form.tStart))}</div>
     <div><b>${esc(stationDoc.student.name)}</b> · ${esc(sh.title)}</div>
     <div class="big">${form.result==="P"?"PASS":"FAIL"} · ${pts}/${tot}</div>
     ${form.critical.length? `<div class="bad">${form.critical.length} critical criteri${form.critical.length>1?"a":"on"} checked</div>`:""}
@@ -267,12 +305,12 @@ async function submit(){
   const body = {code, uid, cls: d.cls, iid: d.iid, examiner: d.instructorName, studentId: stu.id, studentName: stu.name, skillId: d.skillId,
     sendId: stu.sendId, attemptNo: stu.attemptNo, assistantName: stu.assistantName || null,
     marks: form.marks, critical: form.critical, criticalNotes: form.criticalNotes || "", notes: form.notes || "", scenario: form.scenario || "",
-    points: SheetKit.sheetScore(sh, form.marks), result: form.result, startedAt: stu.startedAt || null, endedAt: new Date().toISOString(),
+    points: SheetKit.sheetScore(sh, form.marks), result: form.result, startedAt: form.tStart || stu.startedAt || null, endedAt: form.tEnd || new Date().toISOString(), calledAt: stu.startedAt || null,
     submittedAt: new Date().toISOString(), status: "pending"};
   try{
     if(sub && sub.status==="returned"){ await db.collection("submissions").doc(sub.id).set(Object.assign({}, body, {returnNote: sub.returnNote||"", resubmitted: true})); }
     else { const ref = db.collection("submissions").doc(); await ref.set(body); store("sub:"+stu.sendId, ref.id); loadFormFor(d); }
-    form._submitted = true; saveDraft();
+    form._submitted = true; saveDraft(); pushStatus("submitted");
     closeSheet(); render();
   }catch(e){ closeSheet(); flash("Couldn't submit. Check the Wi-Fi and try again. Your sheet is saved on this device."); }
 }
@@ -285,9 +323,11 @@ let flashT = null;
 function flash(t){ openSheet(`<div class="warn">${esc(t)}</div><button class="btn" onclick="document.getElementById('mBg').hidden=true">OK</button>`); }
 function tick(){
   const d = stationDoc; const el = $("tTimer");
-  if(!d || !d.student || !d.student.startedAt){ el.hidden = true; return; }
-  const ms = Date.now() - Date.parse(d.student.startedAt), sh = sheet();
+  if(!d || !d.student || !form || !form.tStart){ el.hidden = true; return; }
+  el.hidden = false;
+  const ms = (form.tEnd ? Date.parse(form.tEnd) : Date.now()) - Date.parse(form.tStart), sh = sheet();
   el.textContent = durText(ms);
+  const big = $("clockBig"); if(big) big.textContent = durText(ms);
   el.classList.toggle("near", !!(sh && sh.timeLimitMin && ms >= (sh.timeLimitMin-2)*60000 && ms < sh.timeLimitMin*60000));
   el.classList.toggle("over", !!(sh && sh.timeLimitMin && ms >= sh.timeLimitMin*60000));
 }

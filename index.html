@@ -67,6 +67,8 @@ nav.tabs button[aria-selected="true"]{background:var(--accent-soft);color:var(--
 .codes{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
 .codecard{display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--paper)}
 .codecard .qr{background:#fff;padding:4px;border-radius:6px;min-width:104px;min-height:104px}
+.timer.called{background:var(--warn-soft);color:var(--warn);font-family:var(--body);font-size:12.5px}
+.timer.stopped{background:var(--paper);color:var(--ink);border:1px solid var(--line)}
 .subbadge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#fff;background:var(--accent);border:0;border-radius:999px;padding:2px 10px;justify-self:start;cursor:pointer}
 .subline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--accent);border-radius:7px;padding:4px 8px;font-size:12.5px}
 .subline .btn{padding:2px 10px;font-size:12px}
@@ -856,7 +858,8 @@ async function recordResult(iid, result, extra){
   const a = Object.assign({id: uid("a"), studentId: st.studentId, skillId: st.skillId, instructorId: iid,
              instructorName: iname(iid), result, at: new Date().toISOString(), startedAt: st.startedAt || null, override: st.override || null, assistantId: st.assistantId || null, sendId: st.sendId || null}, extra||{});
   attempts.push(a);
-  st.lastDur = st.startedAt ? activeMs(st.startedAt, Date.parse(a.at)) : null;
+  st.lastDur = (a.sheet && a.sheet.startedAt && a.sheet.endedAt) ? Math.max(0, Date.parse(a.sheet.endedAt) - Date.parse(a.sheet.startedAt))
+    : st.startedAt ? activeMs(st.startedAt, Date.parse(a.at)) : null;
   st.lastPair = a.assistantId ? {main: a.studentId, asst: a.assistantId, skillId: a.skillId} : null;
   st.studentId = null; st.startedAt = null; st.override = null; st.assistantId = null; st.sendId = null;
   renderAll();
@@ -945,7 +948,7 @@ function fmCard(ins, mini){
     const n = rec(st.studentId, st.skillId).n + 1;
     line = `<span class="stu" title="${n===1?"1st attempt":`Retest · attempt ${n} of ${MAX_ATTEMPTS}`}">${esc(sname(student(st.studentId)))}${n>1?` <small style="color:var(--warn)">R${n}</small>`:""}</span>
       <span class="s">${n===1?"1st attempt":`Retest · attempt ${n} of ${MAX_ATTEMPTS}`}${st.override?" · rules skipped":""}</span>${assistHtml(ins.id, true)}${subHtml(ins.id, true)}`;
-    acts = `${timerHtml(st.startedAt)}<button class="btn pass" data-act="pass" data-iid="${ins.id}">Pass</button><button class="btn fail" data-act="fail" data-iid="${ins.id}">Fail</button>`;
+    acts = `${stationClock(ins.id)}<button class="btn pass" data-act="pass" data-iid="${ins.id}">Pass</button><button class="btn fail" data-act="fail" data-iid="${ins.id}">Fail</button>`;
   } else if(!mini && k && !st.onBreak){
     const ok = suggestions(ins.id).ok;
     if(ok.length){
@@ -1038,7 +1041,7 @@ function renderStations(){
         <div class="testing-now">
           <div><div class="who">${esc(sname(s))}</div>
           <div class="meta">${esc(k?k.name:"")} · ${n===1?"1st attempt":`<b style="color:var(--warn)">Retest · attempt ${n} of ${MAX_ATTEMPTS}</b>`} ${st.override?` · <b style="color:var(--warn)">Rules skipped</b>`:""}</div></div>
-          <div class="btns">${timerHtml(st.startedAt)}
+          <div class="btns">${stationClock(ins.id)}
             <button class="btn pass" data-act="pass" data-iid="${ins.id}">Pass</button>
             <button class="btn fail" data-act="fail" data-iid="${ins.id}">Fail</button>
           </div>
@@ -1720,6 +1723,10 @@ function renderSetup(){
         <div class="row"><button class="btn primary" data-act="addstu">Add students</button></div>
         <div class="list">${stuHtml}</div></div>
     </div>
+    <div class="card"><h2>Candidate prompts</h2>
+      <p class="hint">What the instructor reads to the candidate before tapping Start. Shown on the instructor screen for that skill. Shared by all labs.</p>
+      <div class="list">${allSkills().filter(k=>SKILL_SHEETS[k.id] || activeSkills().some(a=>a.id===k.id)).map(k=>`<div class="field"><label for="pr-${k.id}">${esc(k.name)}</label>
+        <textarea class="txt" id="pr-${k.id}" data-edit="prompt" data-kid="${k.id}" placeholder="Paste the instructions you read to the candidate for this skill">${esc(prompts[k.id]||"")}</textarea></div>`).join("")}</div></div>
     <div class="card"><h2>Instructor screens</h2>
       <p class="hint">Instructors grade on their own device at <b>${esc(stationUrl())}</b> with a station code. No account needed. They only see the student you send them, and every sheet waits for your approval.</p>
       <div class="row"><button class="btn primary" data-act="codes">Show station codes</button></div></div>
@@ -1983,6 +1990,7 @@ document.addEventListener("change", e=>{
   if(ed){
     if(!guard()) return;
     const v = t.value.trim();
+    if(ed==="prompt"){ if(!guard()) return; prompts[t.dataset.kid] = t.value.trim(); if(!prompts[t.dataset.kid]) delete prompts[t.dataset.kid]; savePrompts(); toast("Prompt saved."); return; }
     if(ed==="cls"){ const c=classes.find(x=>x.id===t.dataset.id); if(c && v){ c.name=v; saveClasses(); renderAll(); } return; }
     if(ed==="sem") cfg.semester = v;
     if(ed==="core"||ed==="pool"){ const k=(ed==="core"?cfg.core:cfg.pool).find(x=>x.id===t.dataset.kid); if(k && v) k[t.dataset.f]=v; }
@@ -2041,7 +2049,7 @@ function codePayload(iid){
   const st = live.stations[iid] || {}, k = st.skillId ? skill(st.skillId) : null, sh = k && window.SKILL_SHEETS ? SKILL_SHEETS[k.id] : null;
   const stu = st.studentId ? student(st.studentId) : null;
   return {cls, lab: className(cls), iid, instructorName: iname(iid), stationNo: st.slot || null,
-    skillId: k ? k.id : null, skillName: k ? k.name : null, sheetCode: sh ? sh.code : null, onBreak: !!st.onBreak,
+    skillId: k ? k.id : null, skillName: k ? k.name : null, sheetCode: sh ? sh.code : null, onBreak: !!st.onBreak, prompt: k ? (prompts[k.id] || "") : "",
     student: stu ? {id: stu.id, name: sname(stu), attemptNo: (buildIndex(), rec(stu.id, st.skillId).n + 1), startedAt: st.startedAt || null, sendId: st.sendId || null,
       assistantName: st.assistantId ? sname(student(st.assistantId)) : null} : null};
 }
@@ -2083,12 +2091,37 @@ function openCodes(){
   for(const i of list){ const el = $("qr-"+i.id); if(el && window.QRCode){ try{ new QRCode(el, {text: stationUrl(live.stations[i.id].code), width: 96, height: 96}); }catch(e){} } }
 }
 
+
+/* ---------- where each instructor's test is (written by the station screen) ---------- */
+let statuses = [], statusUnsub = null;
+function statusFor(iid){
+  const st = live.stations[iid]; if(!st || !st.studentId || !st.code) return null;
+  return statuses.find(x=>x.code===st.code && x.sendId===st.sendId) || null;
+}
+function stationClock(iid){
+  const st = live.stations[iid] || {}, x = statusFor(iid);
+  if(!st.code || !x) return timerHtml(st.startedAt);   // no instructor screen in use: clock from Send, as before
+  if(x.phase==="called") return `<span class="timer num called" title="Instructor is calling the student. Clock starts when they tap Start.">Calling</span>`;
+  if(x.phase==="running" && x.startedAt) return timerHtml(x.startedAt);
+  if((x.phase==="ended" || x.phase==="submitted") && x.startedAt && x.endedAt) return `<span class="timer num stopped" title="Test ended, instructor is finishing the sheet">${durText(Date.parse(x.endedAt)-Date.parse(x.startedAt))}${x.phase==="ended"?" · grading":""}</span>`;
+  return timerHtml(st.startedAt);
+}
+/* ---------- candidate prompts (shared by all labs) ---------- */
+let prompts = {}, promptsSub = null;
+function subscribePrompts(){
+  if(promptsSub || !db) return;
+  promptsSub = db.doc("app/prompts").onSnapshot(snap=>{ prompts = snap.exists ? clone(snap.data()) : {}; scheduleCodeSync(); for(const k of Object.keys(codeCache)) delete codeCache[k]; if(ui.tab==="setup") renderSetup(); }, ()=>{});
+}
+function savePrompts(){ const body = clone(prompts); for(const k of Object.keys(codeCache)) delete codeCache[k]; scheduleCodeSync(); return enqueue("app/prompts", ()=>retry(()=>db.doc("app/prompts").set(body))); }
+
 /* ---------- submitted sheets waiting for approval ---------- */
 let subs = [], subsUnsub = null;
 function subscribeSubs(){
   if(subsUnsub){ try{ subsUnsub(); }catch(e){} subsUnsub = null; }
   if(!db || !cls) return;
   const id = cls;
+  if(statusUnsub){ try{ statusUnsub(); }catch(e){} statusUnsub = null; }
+  statusUnsub = db.collection("stationStatus").where("cls","==",id).onSnapshot(snap=>{ if(cls!==id) return; statuses = snap.docs.map(d=>clone(d.data())); renderAll(); }, ()=>{});
   subsUnsub = db.collection("submissions").where("cls","==",id).onSnapshot(snap=>{
     if(cls!==id) return;
     const before = new Set(subs.filter(x=>x.status==="pending").map(x=>x.id));
@@ -2325,7 +2358,7 @@ function startData(){
       if(!want){ try{ want = localStorage.getItem("skills-class"); }catch(e){} }
       if(!classes.find(c=>c.id===want)) want = classes[0] && classes[0].id;
       if(want && want!==cls) openClass(want); else renderAll();
-      subscribeShared(); subscribeHistory();
+      subscribeShared(); subscribeHistory(); subscribePrompts();
     } else if(!snap.metadata.fromCache){
       createClasses();
     }

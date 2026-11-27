@@ -22,6 +22,13 @@ service cloud.firestore {
       allow get: if request.auth != null;
     }
 
+    // Where a station's test is (called / running / ended), written by that station's screen.
+    match /stationStatus/{code} {
+      allow write: if request.auth != null
+        && exists(/databases/$(database)/documents/stationCodes/$(code))
+        && request.resource.data.code == code;
+    }
+
     // Skill sheets submitted by instructors.
     match /submissions/{id} {
       function validSheet(d) {
