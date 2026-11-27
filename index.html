@@ -2176,21 +2176,51 @@ function savePrompts(){ const body = clone(prompts); for(const k of Object.keys(
 let subs = [], subsUnsub = null;
 function subscribeSubs(){
   if(subsUnsub){ try{ subsUnsub(); }catch(e){} subsUnsub = null; }
+  onSubsSnap.last = onToldSnap.last = onStatusSnap.last = null;
   if(!db || !cls) return;
   const id = cls;
   if(statusUnsub){ try{ statusUnsub(); }catch(e){} statusUnsub = null; }
-  statusUnsub = db.collection("stationStatus").where("cls","==",id).onSnapshot(snap=>{ if(cls!==id) return; statuses = snap.docs.map(d=>clone(d.data())); renderAll(); }, ()=>{});
+  statusUnsub = db.collection("stationStatus").where("cls","==",id).onSnapshot(snap=>onStatusSnap(snap, id), ()=>{});
   if(toldUnsub){ try{ toldUnsub(); }catch(e){} toldUnsub = null; }
-  toldUnsub = db.collection("stationTold").where("cls","==",id).onSnapshot(snap=>{ if(cls!==id) return; toldDocs = snap.docs.map(d=>clone(d.data())); if(loaded.att) applyTold(); renderAll(); }, ()=>{});
-  subsUnsub = db.collection("submissions").where("cls","==",id).onSnapshot(snap=>{
+  toldUnsub = db.collection("stationTold").where("cls","==",id).onSnapshot(snap=>onToldSnap(snap, id), ()=>{});
+  subsUnsub = db.collection("submissions").where("cls","==",id).onSnapshot(snap=>onSubsSnap(snap, id), ()=>{});
+}
+function onSubsSnap(snap, id){
     if(cls!==id) return;
+    const sig = JSON.stringify(snap.docs.map(d=>[d.id, d.data().status, d.data().submittedAt]));
+    if(sig === onSubsSnap.last) return; onSubsSnap.last = sig;
     const before = new Set(subs.filter(x=>x.status==="pending").map(x=>x.id));
     subs = snap.docs.map(d=>Object.assign({id:d.id}, clone(d.data())));
     const fresh = subs.filter(x=>x.status==="pending" && !before.has(x.id));
     for(const x of fresh) toast(`Sheet in: ${x.studentName} · ${skill(x.skillId)?skill(x.skillId).short:""} · ${x.result==="P"?"PASS":"FAIL"} from ${x.examiner}. Review to approve.${x.submittedAt?` (arrived ${((Date.now()-Date.parse(x.submittedAt))/1000).toFixed(1)}s after submit)`:""}`);
     renderAll();
-  }, ()=>{});
 }
+function onToldSnap(snap, id){
+  if(cls!==id) return;
+  const sig = JSON.stringify(snap.docs.map(d=>d.data().told||{}));
+  if(sig === onToldSnap.last) return; onToldSnap.last = sig;
+  toldDocs = snap.docs.map(d=>clone(d.data())); if(loaded.att) applyTold(); renderAll();
+}
+function onStatusSnap(snap, id){
+  if(cls!==id) return;
+  const sig = JSON.stringify(snap.docs.map(d=>d.data().at));
+  if(sig === onStatusSnap.last) return; onStatusSnap.last = sig;
+  statuses = snap.docs.map(d=>clone(d.data())); renderAll();
+}
+/* Some networks hold live updates for ~30 s. While something is outstanding, also ask directly every 5 s;
+   a direct request isn't held back. Only runs when needed, to keep reads low. */
+async function pollStations(){
+  if(!db || !cls || document.hidden || window.__testDb && !window.__testPoll) return;
+  const id = cls;
+  const busy = Object.values(live.stations||{}).some(st=>st && st.studentId && st.code);
+  const waitingTold = attempts.some(a=>a.released && !a.told);
+  try{
+    if(waitingTold) onToldSnap(await db.collection("stationTold").where("cls","==",id).get(), id);
+    if(busy){ onSubsSnap(await db.collection("submissions").where("cls","==",id).get(), id);
+              onStatusSnap(await db.collection("stationStatus").where("cls","==",id).get(), id); }
+  }catch(e){}
+}
+setInterval(pollStations, 5000);
 function pendingFor(iid){
   const st = live.stations[iid]; if(!st || !st.studentId) return null;
   return subs.find(x=>x.status==="pending" && x.iid===iid && x.studentId===st.studentId && (!st.sendId || x.sendId===st.sendId)) || null;
@@ -2435,7 +2465,7 @@ function startData(){
 boot();
 
 /* ---------- "new version available" check (GitHub Pages caches pages for a few minutes) ---------- */
-const BUILD = "20261127064334";
+const BUILD = "20261127064913";
 function checkVersion(){
   if(window.__testDb) return;
   fetch("version.json?t=" + Date.now(), {cache: "no-store"}).then(r=>r.ok? r.json() : null).then(v=>{
